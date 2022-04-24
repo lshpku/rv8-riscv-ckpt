@@ -1,10 +1,49 @@
+import os
 import argparse
+import subprocess
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
 
 PAGE_OFFS = 12
 PAGE_SIZE = 1 << PAGE_OFFS
+
+JAL_LENGTH = 1 << 20
+
+dirname = os.path.dirname(__file__)
+
+
+def make_jump(offset):
+    cmd = ['make', 'jump.bin', '-DOFFSET=%d' % offset]
+    p = subprocess.Popen(cmd)
+    if p.wait():
+        exit(p.returncode)
+    with open('jump.bin', 'rb') as f:
+        return f.read()
+
+
+def make_near(trap_pc, near_pc, near_buf, far_call):
+    trap_jump = make_jump(near_pc - trap_pc)
+
+    cmd = ['make', 'near.bin',
+           '-DNEAR_BUF=%d' % near_buf, '-DFAR_CALL=%d' % far_call]
+    p = subprocess.Popen(cmd)
+    if p.wait():
+        exit(p.returncode)
+    with open('near.bin', 'rb') as f:
+        near = f.read()
+
+    ret_jump = make_jump(trap_pc + 4 - near_pc - len(near))
+    return trap_jump, near + ret_jump
+
+
+def make_replay(far_stack_top):
+    cmd = ['make', 'replay.bin', '-DFAR_STACK_TOP=%d' % far_stack_top]
+    p = subprocess.Popen(cmd)
+    if p.wait():
+        exit(p.returncode)
+    with open('replay.bin', 'rb') as f:
+        return f.read()
 
 
 def parse_log(f):
