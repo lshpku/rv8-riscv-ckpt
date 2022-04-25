@@ -16,6 +16,7 @@
 cl_begin:
 	mv	t2, a2
 	mv	sp, a3
+	li	t3, -1
 
 	# map pages
 	beqz	a1, .end
@@ -24,90 +25,89 @@ cl_begin:
 	add	t1, t1, t0
 .loop:
 	ld	a0, 0(t0)	# addr
-	ld	a5, 8(t0)	# offset
 	ld	a1, 16(t0)	# size
 	lwu	a2, 24(t0)	# prot
 	lwu	a3, 28(t0)	# flags
-	mv	a4, s4	# fd
+	mv	a4, t2	# fd
+	ld	a5, 8(t0)	# offset
 	li	a7, 222	# mmap
 	ecall
-	beqz	a0, .fail
+	beq	a0, t3, .fail
 	addi	t0, t0, 32
 	bltu	t0, t1, .loop
 .end:
 	mv	a0, t2	# fd
 	li	a7, 57	# close
 	ecall
-	j	.fail
 
 	# restore register file
 	# 30 int regs except x0 and x2 (sp)
-	ld	x1, 0(sp)
-	ld	x3, 8(sp)
-	ld	x4, 16(sp)
-	ld	x5, 24(sp)
-	ld	x6, 32(sp)
-	ld	x7, 40(sp)
-	ld	x8, 48(sp)
-	ld	x9, 56(sp)
-	ld	x10, 64(sp)
-	ld	x11, 72(sp)
-	ld	x12, 80(sp)
-	ld	x13, 88(sp)
-	ld	x14, 96(sp)
-	ld	x15, 104(sp)
-	ld	x16, 112(sp)
-	ld	x17, 120(sp)
-	ld	x18, 128(sp)
-	ld	x19, 136(sp)
-	ld	x20, 144(sp)
-	ld	x21, 152(sp)
-	ld	x22, 160(sp)
-	ld	x23, 168(sp)
-	ld	x24, 176(sp)
-	ld	x25, 184(sp)
-	ld	x26, 192(sp)
-	ld	x27, 200(sp)
-	ld	x28, 208(sp)
-	ld	x29, 216(sp)
-	ld	x30, 224(sp)
-	ld	x31, 232(sp)
+	ld	x1, 8(sp)
+	ld	x3, 24(sp)
+	ld	x4, 32(sp)
+	ld	x5, 40(sp)
+	ld	x6, 48(sp)
+	ld	x7, 56(sp)
+	ld	x8, 64(sp)
+	ld	x9, 72(sp)
+	ld	x10, 80(sp)
+	ld	x11, 88(sp)
+	ld	x12, 96(sp)
+	ld	x13, 104(sp)
+	ld	x14, 112(sp)
+	ld	x15, 120(sp)
+	ld	x16, 128(sp)
+	ld	x17, 136(sp)
+	ld	x18, 144(sp)
+	ld	x19, 152(sp)
+	ld	x20, 160(sp)
+	ld	x21, 168(sp)
+	ld	x22, 176(sp)
+	ld	x23, 184(sp)
+	ld	x24, 192(sp)
+	ld	x25, 200(sp)
+	ld	x26, 208(sp)
+	ld	x27, 216(sp)
+	ld	x28, 224(sp)
+	ld	x29, 232(sp)
+	ld	x30, 240(sp)
+	ld	x31, 248(sp)
 	# 32 fp regs
-	fld	f0, 240(sp)
-	fld	f1, 248(sp)
-	fld	f2, 256(sp)
-	fld	f3, 264(sp)
-	fld	f4, 272(sp)
-	fld	f5, 280(sp)
-	fld	f6, 288(sp)
-	fld	f7, 296(sp)
-	fld	f8, 304(sp)
-	fld	f9, 312(sp)
-	fld	f10, 320(sp)
-	fld	f11, 328(sp)
-	fld	f12, 336(sp)
-	fld	f13, 344(sp)
-	fld	f14, 352(sp)
-	fld	f15, 360(sp)
-	fld	f16, 368(sp)
-	fld	f17, 376(sp)
-	fld	f18, 384(sp)
-	fld	f19, 392(sp)
-	fld	f20, 400(sp)
-	fld	f21, 408(sp)
-	fld	f22, 416(sp)
-	fld	f23, 424(sp)
-	fld	f24, 432(sp)
-	fld	f25, 440(sp)
-	fld	f26, 448(sp)
-	fld	f27, 456(sp)
-	fld	f28, 464(sp)
-	fld	f29, 472(sp)
-	fld	f30, 480(sp)
-	fld	f31, 488(sp)
+	fld	f0, 256(sp)
+	fld	f1, 264(sp)
+	fld	f2, 272(sp)
+	fld	f3, 280(sp)
+	fld	f4, 288(sp)
+	fld	f5, 296(sp)
+	fld	f6, 304(sp)
+	fld	f7, 312(sp)
+	fld	f8, 320(sp)
+	fld	f9, 328(sp)
+	fld	f10, 336(sp)
+	fld	f11, 344(sp)
+	fld	f12, 352(sp)
+	fld	f13, 360(sp)
+	fld	f14, 368(sp)
+	fld	f15, 376(sp)
+	fld	f16, 384(sp)
+	fld	f17, 392(sp)
+	fld	f18, 400(sp)
+	fld	f19, 408(sp)
+	fld	f20, 416(sp)
+	fld	f21, 424(sp)
+	fld	f22, 432(sp)
+	fld	f23, 440(sp)
+	fld	f24, 448(sp)
+	fld	f25, 456(sp)
+	fld	f26, 464(sp)
+	fld	f27, 472(sp)
+	fld	f28, 480(sp)
+	fld	f29, 488(sp)
+	fld	f30, 496(sp)
+	fld	f31, 504(sp)
 
 	# goto entrypoint
-	ld	sp, 496(sp)
+	ld	sp, 0(sp)
 	jr	sp
 
 .fail:

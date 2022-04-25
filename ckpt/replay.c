@@ -17,5 +17,5 @@ replay_cfg *replay(replay_cfg *head)
             *(dst++) = *(src++);
         head = (void *)head + sizeof(replay_cfg) + ((head->size + 7) & ~7);
     }
-    return head + sizeof(replay_cfg);
+    return (void *)head + sizeof(replay_cfg);
 }

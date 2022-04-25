@@ -64,6 +64,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "cannot map cl: %s\n", strerror(errno));
         return -1;
     }
+    memcpy(cl_p, cl_begin, cl_size);
+    asm volatile("fence.i");
     printf("map cl to %p\n", cl_p);
 
     // parse mmap_cfgs
