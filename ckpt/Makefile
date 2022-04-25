@@ -8,7 +8,11 @@ OBJCOPY = $(TOOLCHAIN)objcopy
 all:
 
 near.o: near.S
+ifeq ($(RETURN_ONLY), 1)
+	$(CC) -DNEAR_BUF=$(NEAR_BUF) -DRETURN_ONLY -c -o $@ $<
+else
 	$(CC) -DNEAR_BUF=$(NEAR_BUF) -DFAR_CALL=$(FAR_CALL) -c -o $@ $<
+endif
 near.partial.o: near.o
 	$(LD) -e 0x10000 -o $@ $^
 near.bin: near.partial.o
