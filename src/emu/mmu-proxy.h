@@ -5,6 +5,10 @@
 #ifndef rv_mmu_proxy_h
 #define rv_mmu_proxy_h
 
+#define HEXLEN(a) ((int)sizeof(a) * 2)
+#define BITLEN(a) ((int)sizeof(a) * 8)
+#define ZEXTUL(a) (((unsigned long)(a) << (64 - BITLEN(a))) >> (64 - BITLEN(a)))
+
 namespace riscv {
 
 	template <typename UX>
@@ -36,7 +40,7 @@ namespace riscv {
 		typedef std::shared_ptr<MEMORY> memory_type;
 
 		enum : addr_t {
-			memory_top = (sizeof(UX) == 4 ? 0x80000000 : 0x7f0000000000),
+			memory_top = 0x80000000, // (sizeof(UX) == 4 ? 0x80000000 : 0x7f0000000000),
 			stack_size = 0x100000 // 1 MiB
 		};
 
@@ -64,7 +68,12 @@ namespace riscv {
 					}
 				}
 			}
-			return riscv::inst_fetch(pc, pc_offset);
+			inst_t inst = riscv::inst_fetch(pc, pc_offset);
+			if (ckpt_file) {
+				fprintf(ckpt_file, "fetch %lx = %0*lx\n", (unsigned long)pc,
+					(int)pc_offset * 2, (unsigned long)inst);
+			}
+			return inst;
 		}
 
 		/* Note: in this simple proxy MMU model, stores beyond memory top wrap */
@@ -75,6 +84,10 @@ namespace riscv {
 			val1 = UX(*(T*)addr_t(va & (memory_top - 1)));
 			val2 = amo_fn<UX>(a_op, val1, val2);
 			*((T*)addr_t(va & (memory_top - 1))) = val2;
+			if (ckpt_file) {
+				fprintf(ckpt_file, "amo %lx = %0*lx %0*lx\n", (unsigned long)va,
+					HEXLEN(val1), ZEXTUL(val1), HEXLEN(val2), ZEXTUL(val2));
+			}
 		}
 
 		template <typename P, typename T> void load(P &proc, UX va, T &val)
@@ -84,6 +97,10 @@ namespace riscv {
 			} else {
 				val = UX(*(T*)addr_t(va));
 			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "load %lx = %0*lx\n", (unsigned long)va,
+					HEXLEN(val), ZEXTUL(val));
+			}
 		}
 
 		template <typename P, typename T> void store(P &proc, UX va, T val)
@@ -92,6 +109,10 @@ namespace riscv {
 				*((T*)addr_t(va & (memory_top - 1))) = val;
 			} else {
 				*((T*)addr_t(va)) = val;
+			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "store %lx = %0*lx\n", (unsigned long)va,
+					HEXLEN(val), ZEXTUL(val));
 			}
 		}
 	};

@@ -618,6 +618,9 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
+		if (ckpt_file) {
+			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
+		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -706,6 +709,11 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], path, (long)proc.ireg[rv_ireg_a2],
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
+		if (ckpt_file) {
+			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
+			if (ret > 0)
+				log_syswrite(ckpt_file, buf, ret);
+		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -747,6 +755,10 @@ namespace riscv {
 			printf("fstat(%ld,0x%lx) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				cvt_error(ret));
+		}
+		if (ckpt_file) {
+			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
+			log_syswrite(ckpt_file, guest_stat, sizeof(*guest_stat));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -834,12 +846,22 @@ namespace riscv {
 				printf("clock_get_time(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a1], 0);
 			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "syscall = 0\n");
+				log_syswrite(ckpt_file, &abi_ts->tv_sec, sizeof(abi_ts->tv_sec));
+				log_syswrite(ckpt_file, &abi_ts->tv_nsec, sizeof(abi_ts->tv_nsec));
+			}
 		} else {
 			if (proc.log & proc_log_syscall) {
 				printf("clock_get_time(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a1], -EFAULT);
 			}
 			proc.ireg[rv_ireg_a0] = -EFAULT;
+			if (ckpt_file) {
+				fprintf(ckpt_file, "syscall = %d\n", -EFAULT);
+				log_syswrite(ckpt_file, &abi_ts->tv_sec, sizeof(abi_ts->tv_sec));
+				log_syswrite(ckpt_file, &abi_ts->tv_nsec, sizeof(abi_ts->tv_nsec));
+			}
 		}
 	}
 
@@ -882,6 +904,14 @@ namespace riscv {
 		if (proc.log & proc_log_syscall) {
 			printf("uname(0x%lx) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], cvt_error(ret));
+		}
+		if (ckpt_file) {
+			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
+			log_syswrite(ckpt_file, ustname->sysname, abi_NEW_UTS_LEN);
+			log_syswrite(ckpt_file, ustname->nodename, abi_NEW_UTS_LEN);
+			log_syswrite(ckpt_file, ustname->release, abi_NEW_UTS_LEN);
+			log_syswrite(ckpt_file, ustname->version, abi_NEW_UTS_LEN);
+			log_syswrite(ckpt_file, ustname->machine, abi_NEW_UTS_LEN);
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -970,6 +1000,9 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], proc.mmu.mem->brk);
 			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "syscall = 0x%llx\n", proc.mmu.mem->brk);
+			}
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk;
 			return;
 		}
@@ -979,6 +1012,9 @@ namespace riscv {
 			if (proc.log & proc_log_syscall) {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], new_brk);
+			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "syscall = 0x%llx\n", new_brk);
 			}
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk = new_brk;
 			return;
@@ -993,6 +1029,9 @@ namespace riscv {
 				printf("brk(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a0], -ENOMEM);
 			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "syscall = %d\n", -ENOMEM);
+			}
 			proc.ireg[rv_ireg_a0] = -ENOMEM;
 		} else {
 			// keep track of the mapped segment and set the new heap_end
@@ -1006,6 +1045,9 @@ namespace riscv {
 			if (proc.log & proc_log_syscall) {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], new_brk);
+			}
+			if (ckpt_file) {
+				fprintf(ckpt_file, "syscall = 0x%llx\n", new_brk);
 			}
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk = new_brk;
 		}

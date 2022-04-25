@@ -167,6 +167,9 @@ namespace riscv {
 
 	/* itoa */
 	std::string itoa(unsigned long long val, int base, const char *xdigs);
+
+	extern FILE *ckpt_file;
+	void log_syswrite(FILE *file, void *addr, size_t size);
 }
 
 #endif

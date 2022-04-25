@@ -230,6 +230,13 @@ struct rv_emulator
 		proc.stats_dirname = stats_dirname;
 		if (symbolicate) proc.symlookup = [&](addr_t va) { return proc.symlookup_elf(va); };
 
+		const char *ckpt_path = "a.log";
+		ckpt_file = fopen(ckpt_path, "w");
+		if (ckpt_file == NULL) {
+			fprintf(stderr, "%s: %s\n", ckpt_path, strerror(errno));
+			exit(-1);
+		}
+
 		/* randomise integer register state with 512 bits of entropy */
 		proc.seed_registers(cpu, initial_seed, 512);
 

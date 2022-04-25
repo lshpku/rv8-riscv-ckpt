@@ -617,3 +617,14 @@ error:
 
 	return ret;
 }
+
+FILE *riscv::ckpt_file;
+
+void riscv::log_syswrite(FILE *file, void *addr, size_t size)
+{
+	fprintf(file, "syswrite %lx =", (unsigned long)addr);
+	for (size_t i = 0; i < size; i++) {
+		fprintf(file, " %02x", ((unsigned char *)addr)[i]);
+	}
+	fprintf(file, "\n");
+}
