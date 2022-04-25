@@ -1,28 +1,33 @@
 
-CC = riscv64-unknown-elf-gcc
-LD = riscv64-unknown-elf-ld
-OBJCOPY = riscv64-unknown-elf-objcopy
+TOOLCHAIN ?= riscv64-unknown-linux-gnu-
 
+CC      = $(TOOLCHAIN)gcc
+LD      = $(TOOLCHAIN)ld
+OBJCOPY = $(TOOLCHAIN)objcopy
 
 all:
 
 near.o: near.S
 	$(CC) -DNEAR_BUF=$(NEAR_BUF) -DFAR_CALL=$(FAR_CALL) -c -o $@ $<
-near.bin: near.o
+near.partial.o: near.o
+	$(LD) -e 0x10000 -o $@ $^
+near.bin: near.partial.o
 	$(OBJCOPY) -O binary $< $@
 
 far.o: far.S
 	$(CC) -DFAR_STACK_TOP=$(FAR_STACK_TOP) -c -o $@ $<
 replay.o: replay.c
 	$(CC) -fPIC -O3 -c -o $@ $<
-partial.o: far.o replay.o
+far.partial.o: far.o replay.o
 	$(LD) -e 0x10000 -o $@ $^
-replay.bin: partial.o
+far.bin: far.partial.o
 	$(OBJCOPY) -O binary $< $@
 
 jump.o: jump.S
 	$(CC) -DOFFSET=$(OFFSET) -c -o $@ $<
-jump.bin: jump.o
+jump.partial.o: jump.o
+	$(LD) -e 0 -o $@ $^
+jump.bin: jump.partial.o
 	$(OBJCOPY) -O binary $< $@
 
 clean:

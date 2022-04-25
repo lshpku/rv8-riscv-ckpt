@@ -1,4 +1,5 @@
 	.text
+	.option	norvc
 	.global	near_call
 near_call:
 	lui	a0, %hi(NEAR_BUF)
