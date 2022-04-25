@@ -30,6 +30,9 @@ jump.partial.o: jump.o
 jump.bin: jump.partial.o
 	$(OBJCOPY) -O binary $< $@
 
+cl: main.c cl.S
+	$(CC) -O3 -static -o $@ $^
+
 clean:
-	rm -f *.o *.bin
+	rm -f cl *.o *.bin
 

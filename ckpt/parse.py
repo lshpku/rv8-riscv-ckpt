@@ -6,6 +6,8 @@ from typing import Union
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
 
+basedir = os.path.dirname(__file__)
+
 PAGE_OFFS = 12
 PAGE_SIZE = 1 << PAGE_OFFS
 FIRST_PN = 0x10
@@ -17,7 +19,7 @@ def page_align(a):
 
 class chdir:
     def __init__(self, path):
-        self.dpath = os.path.join(os.path.dirname(__file__), path)
+        self.dpath = path
         self.spath = os.getcwd()
 
     def __enter__(self):
@@ -29,7 +31,7 @@ class chdir:
 
 def make_clean():
     cmd = ['make', 'clean']
-    with chdir('replay'):
+    with chdir(basedir):
         p = subprocess.Popen(cmd)
         if p.wait():
             exit(p.returncode)
@@ -38,7 +40,7 @@ def make_clean():
 def make_jump(offset):
     make_clean()
     cmd = ['make', 'jump.bin', 'OFFSET=%d' % offset]
-    with chdir('replay'):
+    with chdir(basedir):
         p = subprocess.Popen(cmd)
         if p.wait():
             exit(p.returncode)
@@ -52,7 +54,7 @@ def make_near(trap_pc, near_pc, near_buf, far_call):
     make_clean()
     cmd = ['make', 'near.bin',
            'NEAR_BUF=%d' % near_buf, 'FAR_CALL=%d' % far_call]
-    with chdir('replay'):
+    with chdir(basedir):
         p = subprocess.Popen(cmd)
         if p.wait():
             exit(p.returncode)
@@ -66,7 +68,7 @@ def make_near(trap_pc, near_pc, near_buf, far_call):
 def make_far(far_stack_top):
     make_clean()
     cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top]
-    with chdir('replay'):
+    with chdir(basedir):
         p = subprocess.Popen(cmd)
         if p.wait():
             exit(p.returncode)
@@ -239,9 +241,10 @@ if __name__ == '__main__':
 
     # find a place to put supervisor
     replay_table = make_replay_table(syscalls)
-    regs_bin = b''.join(regs[:63])
+    sp = regs[63]
+    regs = b''.join(regs[:63])
 
-    ro_size = page_align(len(replay_table) + len(regs_bin))
+    ro_size = page_align(len(replay_table) + len(regs))
     rx_size = PAGE_SIZE
     rw_size = PAGE_SIZE
     sv_size = ro_size + rx_size + rw_size + 4096
@@ -253,8 +256,9 @@ if __name__ == '__main__':
 
     far_addr = sv_pn * PAGE_SIZE
     replay_table_addr = far_addr + rx_size
-    regs_bin_addr = replay_table_addr + len(replay_table)
-    far_stack_addr = replay_table_addr + ro_size
+    regs_addr = replay_table_addr + len(replay_table)
+    far_stack_base = replay_table_addr + ro_size
+    far_stack_top = far_stack_base + rw_size
 
     # write near_calls
     for syscall in syscalls:
@@ -262,6 +266,30 @@ if __name__ == '__main__':
         if addr not in near_map:
             continue
         near_addr = near_map.pop(addr)
-        trap, near_call = make_near(addr, near_addr, far_stack_addr, far_addr)
+        trap, near_call = make_near(addr, near_addr, far_stack_base, far_addr)
         pages.put(addr, trap, force=True)
-        pages.put(near_addr, near_call, force=True)
+        pages.put(near_addr, near_call)
+
+    # write supervisor
+    far_bin = make_far(far_stack_base + rw_size)
+    pages.put(far_addr, far_bin)
+    pages.put(replay_table_addr, replay_table)
+    pages.put(regs_addr, regs)
+    pages.put(far_stack_base, sp)
+    pages.put(far_stack_top - 8, replay_table_addr.to_bytes(8, 'little'))
+
+    # dump pages and cfg
+    cfgs = []
+    with open('test.dump', 'wb') as f:
+        for i, (pn, content) in enumerate(pages.get_page_list()):
+            for c in content:
+                if c is None:
+                    f.write(b'\0')
+                else:
+                    f.write(c.to_bytes(1, 'little'))
+            cfgs.append((pn * PAGE_SIZE, i * PAGE_SIZE, PAGE_SIZE))
+    with open('test.cfg', 'w') as f:
+        f.write('%d\n' % len(cfgs))
+        for addr, offs, size in cfgs:
+            f.write('%x %x %x\n' % (addr, offs, size))
+        f.write('%x\n' % regs_addr)
