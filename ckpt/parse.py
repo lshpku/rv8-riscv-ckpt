@@ -1,6 +1,6 @@
 import os
 import argparse
-import subprocess
+from subprocess import Popen, DEVNULL
 from typing import Union
 
 parser = argparse.ArgumentParser()
@@ -32,7 +32,7 @@ class chdir:
 def make_clean():
     cmd = ['make', 'clean']
     with chdir(basedir):
-        p = subprocess.Popen(cmd)
+        p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
             exit(p.returncode)
 
@@ -41,35 +41,37 @@ def make_jump(offset):
     make_clean()
     cmd = ['make', 'jump.bin', 'OFFSET=%d' % offset]
     with chdir(basedir):
-        p = subprocess.Popen(cmd)
+        p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
             exit(p.returncode)
         with open('jump.bin', 'rb') as f:
             return f.read()
 
 
-def make_near(trap_pc, near_pc, near_buf, far_call):
-    trap_jump = make_jump(near_pc - trap_pc)
-
+def make_near(ret_pc: int, near_pc: int, near_buf: int,
+              far_pc: int = None) -> bytes:
     make_clean()
-    cmd = ['make', 'near.bin',
-           'NEAR_BUF=%d' % near_buf, 'FAR_CALL=%d' % far_call]
+    cmd = ['make', 'near.bin', 'NEAR_BUF=%d' % near_buf]
+    if far_pc is None:
+        cmd += ['RETURN_ONLY=1']
+    else:
+        cmd += ['FAR_CALL=%d' % far_pc]
     with chdir(basedir):
-        p = subprocess.Popen(cmd)
+        p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
             exit(p.returncode)
         with open('near.bin', 'rb') as f:
             near = f.read()
 
-    ret_jump = make_jump(trap_pc + 4 - near_pc - len(near))
-    return trap_jump, near + ret_jump
+    ret_jump = make_jump(ret_pc - near_pc - len(near))
+    return near + ret_jump
 
 
 def make_far(far_stack_top):
     make_clean()
     cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top]
     with chdir(basedir):
-        p = subprocess.Popen(cmd)
+        p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
             exit(p.returncode)
         with open('far.bin', 'rb') as f:
@@ -80,6 +82,7 @@ class PageSet:
 
     def __init__(self):
         self.page_map = {}
+        self.free_list = []
 
     def put(self, addr: int, data: Union[int, str, bytes], force: bool = False):
         if isinstance(data, int):
@@ -97,8 +100,7 @@ class PageSet:
             if force or page[offs] is None:
                 page[offs] = b
 
-    def get_free_list(self):
-        free_list = []
+    def init_reserve(self):
         cur = FIRST_PN * PAGE_SIZE
         for pn, content in self.get_page_list():
             pa = pn * PAGE_SIZE
@@ -109,16 +111,45 @@ class PageSet:
                     begin = (cur + 1) & ~1
                     end = (pa + i) & ~1
                     if begin < end:  # align to 2
-                        free_list.append((begin, end))
+                        self.free_list.append((begin, end))
                     cur = None
-        return free_list
+
+    def reserve(self, base: int, size: int) -> int:
+        free_i = None
+        for i, (begin, end) in enumerate(self.free_list):
+            if end - begin < size:
+                continue
+            if end <= base:
+                if base - end + size < 0x1000000:
+                    free_i = i
+            elif begin > base:
+                if begin + size - base >= 0x1000000:
+                    continue
+                if free_i is None:
+                    free_i = i
+                else:
+                    _, last_end = self.free_list[free_i]
+                    if base - last_end > begin - base:
+                        free_i = i
+                break
+        if free_i is None:
+            raise Exception('cannot reserve for %x (%d)' % (base, size))
+
+        begin, end = self.free_list[free_i]
+        if end <= base:
+            addr = end - size
+            self.free_list[free_i] = (begin, end - size)
+        else:
+            addr = begin
+            self.free_list[free_i] = (begin + size, end)
+        return addr
 
     def get_page_list(self):
         return sorted(self.page_map.items())
 
 
 def parse_log(f):
-    regs = [None] * 64  # 30 ints, 32 fp, pc, sp
+    regs = [None] * 64  # pc, 31 int, 32 fp
     pages = PageSet()
     syscalls = []  # [addr, retval, (addr, stream), ...]
 
@@ -139,8 +170,8 @@ def parse_log(f):
             if value == '00000073':
                 syscalls.append([addr])
             pages.put(addr, value)
-            if regs[62] is None:
-                regs[62] = addr.to_bytes(8, 'little')
+            if regs[0] is None:
+                regs[0] = addr.to_bytes(8, 'little')
 
         elif tokens[0] == 'load':
             pages.put(addr, tokens[3])
@@ -162,13 +193,11 @@ def parse_log(f):
             syscalls[-1].append((addr, b''.join(value)))
 
         elif tokens[0] == 'ireg':
-            regs[0] = int(tokens[3], 16).to_bytes(8, 'little')
-            regs[63] = int(tokens[4], 16).to_bytes(8, 'little')
-            for i in range(1, 30):
-                regs[i] = int(tokens[i + 4], 16).to_bytes(8, 'little')
+            for i in range(1, 32):
+                regs[i] = int(tokens[i + 2], 16).to_bytes(8, 'little')
         elif tokens[0] == 'freg':
             for i in range(32):
-                regs[i + 30] = int(tokens[i + 2], 16).to_bytes(8, 'little')
+                regs[i + 32] = int(tokens[i + 2], 16).to_bytes(8, 'little')
         else:
             raise ValueError('unknown type: %s' % tokens[0])
 
@@ -185,10 +214,11 @@ def make_replay_table(syscalls):
             replay_table.append(waddr.to_bytes(8, 'little'))
             if len(value) % 8 != 0:
                 value += b'\0' * (8 - (len(value) % 8))
-            replay_table.append((len(value) // 2).to_bytes(8, 'little'))
+            replay_table.append(len(value).to_bytes(8, 'little'))
             replay_table.append(value)
         replay_table.append(b'\0' * 8)
         replay_table.append(retval.to_bytes(8, 'little'))
+        print(hex(syscall[0]), retval)
     return b''.join(replay_table)
 
 
@@ -198,53 +228,25 @@ if __name__ == '__main__':
     with open(args.path) as f:
         regs, pages, syscalls = parse_log(f)
 
-    # find holes
-    free_list = pages.get_free_list()
-
     # reserve places for near_calls
     make_clean()
-    _, near_tmp = make_near(0, 0, 0, 0)
-    near_size = len(near_tmp)
+    near_size = len(make_near(0, 0, 0, 0))
     near_map = {}  # syscall_addr: near_addr
+    pages.init_reserve()
     for syscall in syscalls:
         addr = syscall[0]
         if addr in near_map:
             continue
-        use_free_i = None
-        for i, (begin, end) in enumerate(free_list):
-            if end - begin < near_size:
-                continue
-            if end <= addr:
-                if addr - end + near_size < 0x1000000:
-                    use_free_i = i
-            elif begin > addr:
-                if begin + near_size - addr >= 0x1000000:
-                    continue
-                if use_free_i is None:
-                    use_free_i = i
-                else:
-                    _, last_end = free_list[use_free_i]
-                    if addr - last_end > begin - addr:
-                        use_free_i = i
-                break
-        if use_free_i is None:
-            raise Exception('cannot find place for syscall')
+        near_map[addr] = pages.reserve(addr, near_size)
 
-        begin, end = free_list[use_free_i]
-        if end <= addr:
-            near_addr = end - near_size
-            free_list[use_free_i] = (begin, end - near_size)
-        else:
-            near_addr = begin
-            free_list[use_free_i] = (begin + near_size, end)
-        near_map[addr] = near_addr
+    entry_pc = int.from_bytes(regs[0], 'little')
+    entry_size = len(make_near(0, 0, 0))
+    entry_near_addr = pages.reserve(entry_pc, entry_size)
 
     # find a place to put supervisor
     replay_table = make_replay_table(syscalls)
-    sp = regs[63]
-    regs = b''.join(regs[:63])
 
-    ro_size = page_align(len(replay_table) + len(regs))
+    ro_size = page_align(len(replay_table) + 8 * len(regs))
     rx_size = PAGE_SIZE
     rw_size = PAGE_SIZE
     sv_size = ro_size + rx_size + rw_size + 4096
@@ -266,16 +268,21 @@ if __name__ == '__main__':
         if addr not in near_map:
             continue
         near_addr = near_map.pop(addr)
-        trap, near_call = make_near(addr, near_addr, far_stack_base, far_addr)
+        trap = make_jump(near_addr - addr)
+        near_call = make_near(addr + 4, near_addr, far_stack_base, far_addr)
         pages.put(addr, trap, force=True)
         pages.put(near_addr, near_call)
+
+    entry_call = make_near(entry_pc, entry_near_addr, far_stack_base)
+    pages.put(entry_near_addr, entry_call)
+    regs[0] = entry_near_addr.to_bytes(8, 'little')
 
     # write supervisor
     far_bin = make_far(far_stack_base + rw_size)
     pages.put(far_addr, far_bin)
     pages.put(replay_table_addr, replay_table)
-    pages.put(regs_addr, regs)
-    pages.put(far_stack_base, sp)
+    pages.put(regs_addr, b''.join(regs))
+    pages.put(far_stack_base, regs[2])
     pages.put(far_stack_top - 8, replay_table_addr.to_bytes(8, 'little'))
 
     # dump pages and cfg
