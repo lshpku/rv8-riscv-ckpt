@@ -11,6 +11,7 @@ basedir = os.path.dirname(__file__)
 PAGE_OFFS = 12
 PAGE_SIZE = 1 << PAGE_OFFS
 FIRST_PN = 0x10
+ECALL = '00000073'
 
 
 def page_align(a):
@@ -84,13 +85,16 @@ class PageSet:
         self.page_map = {}
         self.free_list = []
 
-    def put(self, addr: int, data: Union[int, str, bytes], force: bool = False):
+    def put(self, addr: int, data: Union[int, str, bytes],
+            force: bool = False) -> int:
         if isinstance(data, int):
             data = b'\0' * data
         elif isinstance(data, str):
             data = int(data, 16).to_bytes(len(data) // 2, 'little')
         else:
             assert isinstance(data, bytes)
+
+        put = 0
         for i, b in enumerate(data):
             pn = (addr + i) >> PAGE_OFFS
             offs = (addr + i) & (PAGE_SIZE - 1)
@@ -99,6 +103,8 @@ class PageSet:
             page = self.page_map[pn]
             if force or page[offs] is None:
                 page[offs] = b
+                put += 1
+        return put
 
     def init_reserve(self):
         cur = FIRST_PN * PAGE_SIZE
@@ -153,6 +159,11 @@ def parse_log(f):
     pages = PageSet()
     syscalls = []  # [addr, retval, (addr, stream), ...]
 
+    insts = 0
+    expected_insts = 1000000
+    last_syscall_insts = 0
+    last_syscall_pages = PageSet()
+
     while True:
         line = f.readline()
         if not line:
@@ -167,11 +178,28 @@ def parse_log(f):
 
         if tokens[0] == 'fetch':
             value = tokens[3]
-            if value == '00000073':
-                syscalls.append([addr])
-            pages.put(addr, value)
             if regs[0] is None:
                 regs[0] = addr.to_bytes(8, 'little')
+            if value == ECALL:
+                syscalls.append([addr])
+                last_syscall_pages = PageSet()
+                last_syscall_insts = insts
+            n = pages.put(addr, value)
+            new_since_begin = (n == len(value) // 2)
+            n = last_syscall_pages.put(addr, value)
+            new_since_last_syscall = (n == len(value) // 2)
+            insts += 1
+            if insts >= expected_insts:
+                if new_since_last_syscall:
+                    if syscalls:
+                        print('last syscall %d: 0x%x' % (last_syscall_insts, syscalls[-1][0]))
+                    print('find new inst %d: %s at 0x%x' % (insts, value, addr))
+                    if new_since_begin:
+                        print('new since begin')
+                    break
+                elif value == ECALL:
+                    print('first syscall %d: 0x%x' % (insts, addr))
+                    break
 
         elif tokens[0] == 'load':
             pages.put(addr, tokens[3])
@@ -218,7 +246,6 @@ def make_replay_table(syscalls):
             replay_table.append(value)
         replay_table.append(b'\0' * 8)
         replay_table.append(retval.to_bytes(8, 'little'))
-        print(hex(syscall[0]), retval)
     return b''.join(replay_table)
 
 
