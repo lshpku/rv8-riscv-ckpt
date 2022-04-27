@@ -618,13 +618,22 @@ error:
 	return ret;
 }
 
-FILE *riscv::ckpt_file;
+FILE *riscv::checkpoint_file = NULL;
+CkptDesc *riscv::cur_ckpt = NULL;
 
-void riscv::log_syswrite(FILE *file, void *addr, size_t size)
+void riscv::log_syscall(uint64_t retval)
 {
-	fprintf(file, "syswrite %lx =", (unsigned long)addr);
-	for (size_t i = 0; i < size; i++) {
-		fprintf(file, " %02x", ((unsigned char *)addr)[i]);
+	if (checkpoint_file) {
+		fprintf(checkpoint_file, " = %lu\n", retval);
 	}
-	fprintf(file, "\n");
+}
+
+void riscv::log_syscall(uint64_t retval, void *addr, size_t size)
+{
+	if (checkpoint_file) {
+		fprintf(checkpoint_file, " = %lu\n", retval);
+		for (size_t i = 0; i < size; i++) {
+			cur_ckpt->mem.store((uint64_t)addr + i, (char)0);
+		}
+	}
 }

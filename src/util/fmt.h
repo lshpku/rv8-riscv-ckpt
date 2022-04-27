@@ -19,6 +19,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <type_traits>
 
 #include "args.h"
@@ -168,8 +169,86 @@ namespace riscv {
 	/* itoa */
 	std::string itoa(unsigned long long val, int base, const char *xdigs);
 
-	extern FILE *ckpt_file;
-	void log_syswrite(FILE *file, void *addr, size_t size);
+
+	struct PageRec {
+		uint8_t visited[512];
+		uint8_t content[4096];
+
+		int A(int offs) { return (offs >> 3) & 0x1ff; }
+		int B(int offs) { return 1 << (offs & 7); }
+
+		bool is_visited(int offs) {
+			return visited[A(offs)] & B(offs);
+		}
+
+		void put(int offs, uint8_t val) {
+			visited[A(offs)] |= B(offs);
+			content[offs] = val;
+		}
+	};
+
+	struct MemTrace {
+		std::unordered_map<uint64_t, PageRec *> pages;
+
+		PageRec* get_page(uint64_t pn) {
+			PageRec *&page = pages[pn];
+			if (page == NULL) {
+				page = new PageRec;
+				memset(page, 1, sizeof(PageRec));
+			}
+			return page;
+		}
+
+		bool fetch(uint64_t addr, uint64_t inst, int length) {
+			PageRec *page = NULL;
+			uint64_t pn = 0;
+			bool first_visit = true;
+			for (int i = 0; i < length; i++) {
+				if (!page || (addr + i) >> 12 != pn) {
+					pn = (addr + i) >> 12;
+					page = get_page(addr);
+				}
+				if (page->is_visited((addr + i) & 0xfff)) {
+					first_visit = false;
+				} else {
+					page->put((addr + i) & 0xfff, (inst >> (i * 8)) & 0xff);
+				}
+			}
+			return first_visit;
+		}
+
+		template <typename T>
+		void load(uint64_t addr, T data) {
+			PageRec *page = NULL;
+			uint64_t pn = 0;
+			union { uint64_t xu; T t; } ud = { .t = data };
+			for (size_t i = 0; i < sizeof(T); i++) {
+				if (!page || (addr + i) >> 12 != pn) {
+					pn = (addr + i) >> 12;
+					page = get_page(addr);
+				}
+				if (!page->is_visited((addr + i) & 0xfff)) {
+					page->put((addr + i) & 0xfff, (ud.xu >> (i * 8)) & 0xff);
+				}
+			}
+		}
+
+		template <typename T>
+		void store(uint64_t addr, T data) {
+			load(addr, (T)0);
+		}
+	};
+
+	/* An ongoing checkpoint */
+	struct CkptDesc {
+		MemTrace mem;
+		uint64_t begin_insts;
+	};
+
+	extern FILE *checkpoint_file;
+	extern CkptDesc *cur_ckpt;
+	void log_syscall(uint64_t retval);
+	void log_syscall(uint64_t retval, void *addr, size_t size);
 }
 
 #endif
