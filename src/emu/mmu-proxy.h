@@ -69,9 +69,8 @@ namespace riscv {
 				}
 			}
 			inst_t inst = riscv::inst_fetch(pc, pc_offset);
-			if (ckpt_file) {
-				fprintf(ckpt_file, "fetch %lx = %0*lx\n", (unsigned long)pc,
-					(int)pc_offset * 2, (unsigned long)inst);
+			if (cur_ckpt) {
+				cur_ckpt->mem.fetch(pc, inst, pc_offset);
 			}
 			return inst;
 		}
@@ -84,9 +83,9 @@ namespace riscv {
 			val1 = UX(*(T*)addr_t(va & (memory_top - 1)));
 			val2 = amo_fn<UX>(a_op, val1, val2);
 			*((T*)addr_t(va & (memory_top - 1))) = val2;
-			if (ckpt_file) {
-				fprintf(ckpt_file, "amo %lx = %0*lx %0*lx\n", (unsigned long)va,
-					HEXLEN(val1), ZEXTUL(val1), HEXLEN(val2), ZEXTUL(val2));
+			if (cur_ckpt) {
+				cur_ckpt->mem.load(va, val1);
+				cur_ckpt->mem.store(va, val2);
 			}
 		}
 
@@ -97,9 +96,8 @@ namespace riscv {
 			} else {
 				val = UX(*(T*)addr_t(va));
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "load %lx = %0*lx\n", (unsigned long)va,
-					HEXLEN(val), ZEXTUL(val));
+			if (cur_ckpt) {
+				cur_ckpt->mem.load(va, val);
 			}
 		}
 
@@ -110,9 +108,8 @@ namespace riscv {
 			} else {
 				*((T*)addr_t(va)) = val;
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "store %lx = %0*lx\n", (unsigned long)va,
-					HEXLEN(val), ZEXTUL(val));
+			if (cur_ckpt) {
+				cur_ckpt->mem.store(va, val);
 			}
 		}
 	};

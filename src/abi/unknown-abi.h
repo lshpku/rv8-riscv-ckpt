@@ -619,9 +619,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
-		if (ckpt_file) {
-			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
-		}
+		log_syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -710,10 +708,10 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], path, (long)proc.ireg[rv_ireg_a2],
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
-		if (ckpt_file) {
-			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
-			if (ret > 0)
-				log_syswrite(ckpt_file, buf, ret);
+		if (ret >= 0) {
+			log_syscall(ret, buf, ret);
+		} else {
+			log_syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -758,9 +756,10 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				cvt_error(ret));
 		}
-		if (ckpt_file) {
-			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
-			log_syswrite(ckpt_file, guest_stat, sizeof(*guest_stat));
+		if (ret == 0) {
+			log_syscall(0, guest_stat, sizeof(*guest_stat));
+		} else {
+			log_syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -845,25 +844,17 @@ namespace riscv {
 			abi_ts->tv_nsec = (typename P::long_t)(t % 1000000000);
 			proc.ireg[rv_ireg_a0] = 0;
 			if (proc.log & proc_log_syscall) {
-				printf("clock_get_time(0x%lx) = %d\n",
+				printf("clock_gettime(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a1], 0);
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "syscall = 0\n");
-				log_syswrite(ckpt_file, &abi_ts->tv_sec, sizeof(abi_ts->tv_sec));
-				log_syswrite(ckpt_file, &abi_ts->tv_nsec, sizeof(abi_ts->tv_nsec));
-			}
+			log_syscall(0, abi_ts, sizeof(*abi_ts));
 		} else {
 			if (proc.log & proc_log_syscall) {
-				printf("clock_get_time(0x%lx) = %d\n",
+				printf("clock_gettime(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a1], -EFAULT);
 			}
 			proc.ireg[rv_ireg_a0] = -EFAULT;
-			if (ckpt_file) {
-				fprintf(ckpt_file, "syscall = %d\n", -EFAULT);
-				log_syswrite(ckpt_file, &abi_ts->tv_sec, sizeof(abi_ts->tv_sec));
-				log_syswrite(ckpt_file, &abi_ts->tv_nsec, sizeof(abi_ts->tv_nsec));
-			}
+			log_syscall(-EFAULT);
 		}
 	}
 
@@ -918,13 +909,10 @@ namespace riscv {
 			printf("uname(0x%lx) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], cvt_error(ret));
 		}
-		if (ckpt_file) {
-			fprintf(ckpt_file, "syscall = %d\n", cvt_error(ret));
-			log_syswrite(ckpt_file, ustname->sysname, abi_NEW_UTS_LEN);
-			log_syswrite(ckpt_file, ustname->nodename, abi_NEW_UTS_LEN);
-			log_syswrite(ckpt_file, ustname->release, abi_NEW_UTS_LEN);
-			log_syswrite(ckpt_file, ustname->version, abi_NEW_UTS_LEN);
-			log_syswrite(ckpt_file, ustname->machine, abi_NEW_UTS_LEN);
+		if (ret == 0) {
+			log_syscall(0, ustname, sizeof(*ustname));
+		} else {
+			log_syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -1013,9 +1001,7 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], proc.mmu.mem->brk);
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "syscall = 0x%llx\n", proc.mmu.mem->brk);
-			}
+			log_syscall(proc.mmu.mem->brk);
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk;
 			return;
 		}
@@ -1026,9 +1012,7 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], new_brk);
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "syscall = 0x%llx\n", new_brk);
-			}
+			log_syscall(new_brk);
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk = new_brk;
 			return;
 		}
@@ -1042,9 +1026,7 @@ namespace riscv {
 				printf("brk(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a0], -ENOMEM);
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "syscall = %d\n", -ENOMEM);
-			}
+			log_syscall(-ENOMEM);
 			proc.ireg[rv_ireg_a0] = -ENOMEM;
 		} else {
 			// keep track of the mapped segment and set the new heap_end
@@ -1059,9 +1041,7 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], new_brk);
 			}
-			if (ckpt_file) {
-				fprintf(ckpt_file, "syscall = 0x%llx\n", new_brk);
-			}
+			log_syscall(new_brk);
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk = new_brk;
 		}
 	}

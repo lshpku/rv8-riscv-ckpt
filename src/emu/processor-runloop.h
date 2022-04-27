@@ -153,14 +153,14 @@ namespace riscv {
 
 			/* step the processor */
 			while (P::instret != inststop) {
-				if (P::instret == 0 && ckpt_file) {
-					fprintf(ckpt_file, "ireg =");
+				if (P::instret == 0 && cur_ckpt) {
+					fprintf(checkpoint_file, "ireg =");
 					for (int i = 0; i < 32; i++)
-						fprintf(ckpt_file, " %llx", (unsigned long long)P::ireg[i].r.xu.val);
-					fprintf(ckpt_file, "\nfreg =");
+						fprintf(checkpoint_file, " %llx", (unsigned long long)P::ireg[i].r.xu.val);
+					fprintf(checkpoint_file, "\nfreg =");
 					for (int i = 0; i < 32; i++)
-						fprintf(ckpt_file, " %llx", (unsigned long long)P::freg[i].r.xu.val);
-					fprintf(ckpt_file, "\n");
+						fprintf(checkpoint_file, " %llx", (unsigned long long)P::freg[i].r.xu.val);
+					fprintf(checkpoint_file, "\n");
 				}
 				if (P::pc == P::breakpoint && P::breakpoint != 0) {
 					return exit_cause_cli;
