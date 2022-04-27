@@ -176,7 +176,8 @@ namespace riscv {
 						*(u64*)(seed + i) ^= *(u64*)(random + i);
 					}
 				}
-				P::ireg[i].r.xu.val = *(u64*)(random + (rand_bytes & (SHA512_OUTPUT_BYTES - 1)));
+				//P::ireg[i].r.xu.val = *(u64*)(random + (rand_bytes & (SHA512_OUTPUT_BYTES - 1)));
+				P::ireg[i].r.xu.val = 0;
 				rand_bytes += 8;
 			}
 		}
