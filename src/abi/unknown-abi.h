@@ -40,6 +40,7 @@ namespace riscv {
 		abi_syscall_sysinfo = 179,
 		abi_syscall_brk = 214,
 		abi_syscall_munmap = 215,
+		abi_syscall_mremap = 216,
 		abi_syscall_clone = 220,
 		abi_syscall_execve = 221,
 		abi_syscall_mmap = 222,
@@ -730,8 +731,9 @@ namespace riscv {
 				break;
 		}
 		const char* path = (const char*)(addr_t)proc.ireg[rv_ireg_a1].r.xu.val;
-		int abi_flags = (proc.ireg[rv_ireg_a3] == abi_AT_SYMLINK_NOFOLLOW)
-			? AT_SYMLINK_NOFOLLOW : 0;
+		//int abi_flags = (proc.ireg[rv_ireg_a3] == abi_AT_SYMLINK_NOFOLLOW)
+		//	? AT_SYMLINK_NOFOLLOW : 0;
+		int abi_flags = proc.ireg[rv_ireg_a3];
 		memset(&host_stat, 0, sizeof(host_stat));
 		int ret = fstatat(fd, path, &host_stat, abi_flags);
 		abi_stat<P> *guest_stat = (abi_stat<P>*)(addr_t)proc.ireg[rv_ireg_a2].r.xu.val;
@@ -867,11 +869,22 @@ namespace riscv {
 
 	template <typename P> void abi_sys_rt_sigaction(P &proc)
 	{
+		if (proc.log & proc_log_syscall) {
+			printf("rt_sigaction(%ld,0x%lx,0x%lx) = %d\n",
+				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
+				(long)proc.ireg[rv_ireg_a2], 0);
+		}
 		proc.ireg[rv_ireg_a0] = 0; /* nop */
 	}
 
 	template <typename P> void abi_sys_rt_sigprocmask(P &proc)
 	{
+		if (proc.log & proc_log_syscall) {
+			printf("rt_sigprocmask(%ld,0x%lx,0x%lx,%ld) = %d\n",
+				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
+				(long)proc.ireg[rv_ireg_a2], (long)proc.ireg[rv_ireg_a3],
+				0);
+		}
 		proc.ireg[rv_ireg_a0] = 0; /* nop */
 	}
 
@@ -1064,6 +1077,18 @@ namespace riscv {
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
+	template <typename P> void abi_sys_mremap(P &proc)
+	{
+		int ret = -abi_errno_ENOSYS;
+		if (proc.log & proc_log_syscall) {
+			printf("mremap(0x%lx,%ld,%ld,%ld,0x%lx) = %d\n",
+				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
+				(long)proc.ireg[rv_ireg_a2], (long)proc.ireg[rv_ireg_a3],
+				(long)proc.ireg[rv_ireg_a4], ret);
+		}
+		proc.ireg[rv_ireg_a0] = ret;
+	}
+
 	template <typename P> void abi_sys_clone(P &proc)
 	{
 		int flags = proc.ireg[rv_ireg_a0];
@@ -1088,7 +1113,14 @@ namespace riscv {
 	template <typename P> void abi_sys_execve(P &proc)
 	{
 		/* todo */
-		proc.ireg[rv_ireg_a0] = -abi_errno_ENOSYS;
+		const char* pathname = (const char*)(addr_t)proc.ireg[rv_ireg_a0].r.xu.val;
+		int ret = -abi_errno_ENOSYS;
+		if (proc.log & proc_log_syscall) {
+			printf("execve(%s,0x%lx,0x%lx) = %d\n",
+				pathname, (long)proc.ireg[rv_ireg_a1],
+				(long)proc.ireg[rv_ireg_a2], ret);
+		}
+		proc.ireg[rv_ireg_a0] = ret;
 	}
 
 	template <typename P> void abi_sys_mmap(P &proc)
@@ -1258,6 +1290,7 @@ namespace riscv {
 			case abi_syscall_sysinfo:         abi_sys_sysinfo(proc); break;
 			case abi_syscall_brk:             abi_sys_brk(proc); break;
 			case abi_syscall_munmap:          abi_sys_munmap(proc); break;
+			case abi_syscall_mremap:          abi_sys_mremap(proc); break;
 			case abi_syscall_clone:           abi_sys_clone(proc); break;
 			case abi_syscall_execve:          abi_sys_execve(proc); break;
 			case abi_syscall_mmap:            abi_sys_mmap(proc); break;
