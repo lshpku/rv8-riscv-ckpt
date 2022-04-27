@@ -128,6 +128,7 @@ struct rv_emulator
 	bool help_or_error = false;
 	bool symbolicate = false;
 	uint64_t initial_seed = 0;
+	std::string trace_filename;
 	std::string elf_filename;
 	std::string stats_dirname;
 
@@ -182,6 +183,9 @@ struct rv_emulator
 			{ "-s", "--seed", cmdline_arg_type_string,
 				"Random seed",
 				[&](std::string s) { initial_seed = strtoull(s.c_str(), nullptr, 10); return true; } },
+			{ "-T", "--trace", cmdline_arg_type_string,
+				"Random seed",
+				[&](std::string s) { trace_filename = s; return true; } },
 			{ "-h", "--help", cmdline_arg_type_none,
 				"Show help",
 				[&](std::string s) { return (help_or_error = true); } },
@@ -230,11 +234,13 @@ struct rv_emulator
 		proc.stats_dirname = stats_dirname;
 		if (symbolicate) proc.symlookup = [&](addr_t va) { return proc.symlookup_elf(va); };
 
-		const char *ckpt_path = "a.log";
-		ckpt_file = fopen(ckpt_path, "w");
-		if (ckpt_file == NULL) {
-			fprintf(stderr, "%s: %s\n", ckpt_path, strerror(errno));
-			exit(-1);
+		if (!trace_filename.empty()) {
+			const char *ckpt_path = trace_filename.c_str();
+			ckpt_file = fopen(ckpt_path, "w");
+			if (ckpt_file == NULL) {
+				fprintf(stderr, "%s: %s\n", ckpt_path, strerror(errno));
+				exit(-1);
+			}
 		}
 
 		/* randomise integer register state with 512 bits of entropy */
