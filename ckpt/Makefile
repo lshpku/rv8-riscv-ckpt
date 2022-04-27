@@ -28,7 +28,11 @@ far.bin: far.partial.o
 	$(OBJCOPY) -O binary $< $@
 
 jump.o: jump.S
+ifeq ($(NORVC), 1)
+	$(CC) -DOFFSET=$(OFFSET) -DNORVC -c -o $@ $<
+else
 	$(CC) -DOFFSET=$(OFFSET) -c -o $@ $<
+endif
 jump.partial.o: jump.o
 	$(LD) -e 0 -o $@ $^
 jump.bin: jump.partial.o

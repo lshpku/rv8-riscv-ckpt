@@ -2,7 +2,9 @@
 # An uncompressed jal that can be used to replace ecall/sc
 # or serve as the return from near_call.
 ##
+#ifdef NORVC
 	.option	norvc
+#endif
 	.text
 	.global	rel_jump
 rel_jump:
