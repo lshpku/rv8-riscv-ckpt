@@ -52,10 +52,10 @@ static uintptr_t level_bmap(size_t level, uintptr_t addr, uintptr_t *offset)
 			bmap = METADATA_BASE;
 			break;
 		case 2:
-			bmap = METADATA_BASE + LEVEL_BYTES + ((addr >> 36) & 0xfff) * LEVEL_BYTES;
+			bmap = METADATA_BASE + PAGE_SIZE + ((addr >> 36) & 0xfff) * LEVEL_BYTES;
 			break;
 		case 1:
-			bmap = METADATA_BASE + LEVEL_BYTES + (LEVEL_SIZE * LEVEL_BYTES) + ((addr >> 24) & 0xffffff) * LEVEL_BYTES;
+			bmap = METADATA_BASE + PAGE_SIZE + (LEVEL_SIZE * LEVEL_BYTES) + ((addr >> 24) & 0xffffff) * LEVEL_BYTES;
 			break;
 		default:
 			bmap = -1;
