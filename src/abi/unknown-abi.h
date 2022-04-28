@@ -573,6 +573,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], pathname, (long)proc.ireg[rv_ireg_a2],
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -583,6 +584,7 @@ namespace riscv {
 			printf("close(%ld) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -595,6 +597,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -606,6 +609,11 @@ namespace riscv {
 			printf("read(%ld,0x%lx,%ld) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
+		}
+		if (ret >= 0) {
+			checkpoint.syscall(ret, (void*)(addr_t)proc.ireg[rv_ireg_a1], ret);
+		} else {
+			checkpoint.syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -619,7 +627,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
-		log_syscall(cvt_error(ret));
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -709,9 +717,9 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
 		if (ret >= 0) {
-			log_syscall(ret, buf, ret);
+			checkpoint.syscall(ret, buf, ret);
 		} else {
-			log_syscall(cvt_error(ret));
+			checkpoint.syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -741,6 +749,11 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], path, (long)proc.ireg[rv_ireg_a2],
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
+		if (ret == 0) {
+			checkpoint.syscall(0, guest_stat, sizeof(*guest_stat));
+		} else {
+			checkpoint.syscall(cvt_error(ret));
+		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -757,9 +770,9 @@ namespace riscv {
 				cvt_error(ret));
 		}
 		if (ret == 0) {
-			log_syscall(0, guest_stat, sizeof(*guest_stat));
+			checkpoint.syscall(0, guest_stat, sizeof(*guest_stat));
 		} else {
-			log_syscall(cvt_error(ret));
+			checkpoint.syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -821,6 +834,7 @@ namespace riscv {
 		if (proc.log & proc_log_syscall) {
 			printf("exit(%ld)\n", (long)proc.ireg[rv_ireg_a0]);
 		}
+		checkpoint.exit(proc, proc.ireg[rv_ireg_a0]);
 		proc.exit(proc.ireg[rv_ireg_a0]);
 		exit(proc.ireg[rv_ireg_a0]);
 	}
@@ -847,14 +861,14 @@ namespace riscv {
 				printf("clock_gettime(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a1], 0);
 			}
-			log_syscall(0, abi_ts, sizeof(*abi_ts));
+			checkpoint.syscall(0, abi_ts, sizeof(*abi_ts));
 		} else {
 			if (proc.log & proc_log_syscall) {
 				printf("clock_gettime(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a1], -EFAULT);
 			}
 			proc.ireg[rv_ireg_a0] = -EFAULT;
-			log_syscall(-EFAULT);
+			checkpoint.syscall(-EFAULT);
 		}
 	}
 
@@ -865,6 +879,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], 0);
 		}
+		checkpoint.syscall(0);
 		proc.ireg[rv_ireg_a0] = 0; /* nop */
 	}
 
@@ -910,9 +925,9 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], cvt_error(ret));
 		}
 		if (ret == 0) {
-			log_syscall(0, ustname, sizeof(*ustname));
+			checkpoint.syscall(0, ustname, sizeof(*ustname));
 		} else {
-			log_syscall(cvt_error(ret));
+			checkpoint.syscall(cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
@@ -1001,7 +1016,7 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], proc.mmu.mem->brk);
 			}
-			log_syscall(proc.mmu.mem->brk);
+			checkpoint.syscall(proc.mmu.mem->brk);
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk;
 			return;
 		}
@@ -1012,7 +1027,7 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], new_brk);
 			}
-			log_syscall(new_brk);
+			checkpoint.syscall(new_brk);
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk = new_brk;
 			return;
 		}
@@ -1026,7 +1041,7 @@ namespace riscv {
 				printf("brk(0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a0], -ENOMEM);
 			}
-			log_syscall(-ENOMEM);
+			checkpoint.syscall(-ENOMEM);
 			proc.ireg[rv_ireg_a0] = -ENOMEM;
 		} else {
 			// keep track of the mapped segment and set the new heap_end
@@ -1041,7 +1056,7 @@ namespace riscv {
 				printf("brk(0x%lx) = 0x%llx\n",
 					(long)proc.ireg[rv_ireg_a0], new_brk);
 			}
-			log_syscall(new_brk);
+			checkpoint.syscall(new_brk);
 			proc.ireg[rv_ireg_a0] = proc.mmu.mem->brk = new_brk;
 		}
 	}
@@ -1054,6 +1069,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -1066,6 +1082,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a2], (long)proc.ireg[rv_ireg_a3],
 				(long)proc.ireg[rv_ireg_a4], ret);
 		}
+		checkpoint.syscall(ret);
 		proc.ireg[rv_ireg_a0] = ret;
 	}
 
@@ -1124,6 +1141,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a4], (long)proc.ireg[rv_ireg_a5],
 				ret);
 		}
+		checkpoint.syscall(ret);
 		proc.ireg[rv_ireg_a0].r.xu.val = ret;
 	}
 
@@ -1141,6 +1159,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
