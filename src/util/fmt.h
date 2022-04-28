@@ -194,7 +194,7 @@ namespace riscv {
 			PageRec *&page = pages[pn];
 			if (page == NULL) {
 				page = new PageRec;
-				memset(page, 1, sizeof(PageRec));
+				memset(page, 0, sizeof(PageRec));
 			}
 			return page;
 		}
@@ -206,7 +206,7 @@ namespace riscv {
 			for (int i = 0; i < length; i++) {
 				if (!page || (addr + i) >> 12 != pn) {
 					pn = (addr + i) >> 12;
-					page = get_page(addr);
+					page = get_page(pn);
 				}
 				if (page->is_visited((addr + i) & 0xfff)) {
 					first_visit = false;
@@ -225,7 +225,7 @@ namespace riscv {
 			for (size_t i = 0; i < sizeof(T); i++) {
 				if (!page || (addr + i) >> 12 != pn) {
 					pn = (addr + i) >> 12;
-					page = get_page(addr);
+					page = get_page(pn);
 				}
 				if (!page->is_visited((addr + i) & 0xfff)) {
 					page->put((addr + i) & 0xfff, (ud.xu >> (i * 8)) & 0xff);
@@ -237,18 +237,72 @@ namespace riscv {
 		void store(uint64_t addr, T data) {
 			load(addr, (T)0);
 		}
+
+		void dump(FILE *dump_file, FILE *cfg_file);
+
+		~MemTrace() {
+			for (auto &page : pages) {
+				delete page.second;
+			}
+		}
 	};
 
-	/* An ongoing checkpoint */
-	struct CkptDesc {
-		MemTrace mem;
-		uint64_t begin_insts;
-	};
+	/* An checkpoint */
+	struct CheckpointManager {
+		FILE *out;
+		uint64_t period;
+		uint64_t begin_instret;
+		MemTrace *mem;
 
-	extern FILE *checkpoint_file;
-	extern CkptDesc *cur_ckpt;
-	void log_syscall(uint64_t retval);
-	void log_syscall(uint64_t retval, void *addr, size_t size);
+		enum {
+			ECALL = 0x00000073
+		};
+
+		template <typename P>
+		void fetch(P &proc, uint64_t addr, uint64_t inst, int length) {
+			if (out) {
+				bool first_visit = mem->fetch(addr, inst ,length);
+				if (inst == ECALL) {
+					fprintf(out, "syscall 0x%lx", addr);
+				}
+				uint64_t insts = proc.instret - begin_instret;
+				if (insts > period) {
+					if (inst == ECALL || (first_visit && length == 4)) {
+						fprintf(out, "break 0x%lx\n", addr);
+						dump(proc.instret);
+						delete mem;
+						mem = new MemTrace;
+						begin_instret = proc.instret;
+					}
+				}
+			}
+		}
+
+		void dump(uint64_t current_instret);
+
+		template <typename T>
+		void load(uint64_t addr, T data) {
+			if (out) {
+				mem->load(addr, data);
+			}
+		}
+
+		template <typename T>
+		void store(uint64_t addr, T data) { load(addr, data); }
+
+		void syscall(uint64_t retval) { syscall(retval, NULL, 0); }
+		void syscall(uint64_t retval, void *addr, size_t size);
+
+		template <typename P>
+		void exit(P &proc, int rc) {
+			if (out) {
+				fprintf(out, " = exit\n");
+				dump(proc.instret);
+				fclose(out);
+			}
+		}
+	};
+	extern CheckpointManager checkpoint;
 }
 
 #endif
