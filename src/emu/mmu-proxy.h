@@ -69,9 +69,7 @@ namespace riscv {
 				}
 			}
 			inst_t inst = riscv::inst_fetch(pc, pc_offset);
-			if (cur_ckpt) {
-				cur_ckpt->mem.fetch(pc, inst, pc_offset);
-			}
+			checkpoint.fetch(proc, pc ,inst, pc_offset);
 			return inst;
 		}
 
@@ -83,10 +81,8 @@ namespace riscv {
 			val1 = UX(*(T*)addr_t(va & (memory_top - 1)));
 			val2 = amo_fn<UX>(a_op, val1, val2);
 			*((T*)addr_t(va & (memory_top - 1))) = val2;
-			if (cur_ckpt) {
-				cur_ckpt->mem.load(va, val1);
-				cur_ckpt->mem.store(va, val2);
-			}
+			checkpoint.load(va, val1);
+			checkpoint.store(va, val2);
 		}
 
 		template <typename P, typename T> void load(P &proc, UX va, T &val)
@@ -96,9 +92,7 @@ namespace riscv {
 			} else {
 				val = UX(*(T*)addr_t(va));
 			}
-			if (cur_ckpt) {
-				cur_ckpt->mem.load(va, val);
-			}
+			checkpoint.load(va, val);
 		}
 
 		template <typename P, typename T> void store(P &proc, UX va, T val)
@@ -108,9 +102,7 @@ namespace riscv {
 			} else {
 				*((T*)addr_t(va)) = val;
 			}
-			if (cur_ckpt) {
-				cur_ckpt->mem.store(va, val);
-			}
+			checkpoint.store(va, val);
 		}
 	};
 
