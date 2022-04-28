@@ -208,14 +208,24 @@ Checkpoint原理介绍
 * `sc`指令也可以使用同样的重演表，只是返回值不是放在`a0`中，而是该指令指定的`rd`
 
 
-### 已支持的系统调用列表
+### 支持的系统调用
 
 | 系统调用 | 修改内存 |
 | --- | :-: |
+| uname | Y
+| mmap |
+| munmap |
+| mremap |
+| mprotect |
 | brk |
-| uname | Y |
-| readlinkat | Y |
-| clock_gettime | Y |
-| fstat | Y |
-| read | Y |
+| rt_sigaction |
+| openat |
+| readlinkat | Y
+| fstat | Y
+| fstatat | Y
+| lseek |
+| read | Y
 | write |
+| close |
+| clock_gettime | Y
+| exit |

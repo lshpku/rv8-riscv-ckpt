@@ -18,63 +18,67 @@ RISC-V Checkpoint with rv8
 
 ## 简易上手
 
+### 编译所需程序
 #### 编译rv8
-* 根据[rv8 README](README.rv8.md)编译即可
-* 我对rv8的修改保留了其原有的使用方法，故正常使用参考[rv8 README](README.rv8.md)即可
-
-#### 准备测试样例
-* 我提供了一个`hello.c`的样例，简单且含有多种系统调用，比较具有代表性
-* 使用linux-gnu工具链编译
+* 根据[rv8 README](README.rv8.md)编译本仓库提供的rv8
+#### 编译测试程序
+* 我提供了一个`hello.c`样例，该样例简单且含有多种系统调用，比较具有代表性
     ```bash
     $ riscv64-unknown-linux-gnu-gcc -O2 -static hello.c -o hello
     ```
-
-#### 生成逐指令log
-* 生成log的功能已经被我内置在rv8中，直接运行rv8即可得到log
-    ```bash
-    $ rv-sim hello
-    # Hello, world!
-    # Running time: 0.000347279s!
-    ```
-* 注：rv8对于linux-gnu工具链编译的程序的exit处理有一点问题，不影响中间过程的正确性，也与我的修改无关
-
-* 生成的log如下所示，内容包括寄存器初值，所有取指、访存和系统调用
-    ```bash
-    $ cat a.log
-    # ireg = 0 be12a41ea72ca373 ... 27506ffb48b0469
-    # freg = 0 0 ... 0
-    # fetch 10370 = 02e000ef
-    # fetch 1039e = 0005d197
-    # ...
-    # fetch 1045e = fa22
-    # store 7ffffee0 = 0bbd34009d1390dd
-    # ...
-    # syscall = 0
-    # syswrite 7ffffd90 = 52 44 b3 00 00 00 00 00
-    # syswrite 7ffffd98 = 79 a9 a9 38 00 00 00 00
-    # ...
-    ```
-
-#### 生成内存镜像与内存映射配置文件
-* 使用python脚本处理log以生成这两种文件
-    ```bash
-    $ python3 ckpt/parse.py a.log
-    ```
-* 内存镜像（.dump）文件是程序执行过程中访问过的页
-    * 我只记录被访问过的页，这充分节约了保存空间
-* 内存映射描述（.cfg）文件记录了内存镜像的每个部分到用户地址空间的映射
-    * 这个文件和内存镜像是一一对应的，我把它分出来只是为了方便阅读
-
 #### 编译Ckeckpoint Loader（CL）
-* 我提供了make脚本以编译`cl`
+* `cl`是一个跨平台的用于加载切片的程序，相当于切片的Boot Loader
     ```bash
     $ make -C ckpt cl
     ```
 
-#### 运行
-* 仍然使用rv8运行
+### 生成切片的内存镜像
+* 建立一个存放内存镜像的文件夹
     ```bash
-    $ rv-sim ckpt/cl test.cfg test.dump
+    $ mkdir -p test
+    ```
+* 运行测试程序的同时生成内存镜像
+    ```bash
+    $ rv-sim -C test/test.log -V 1000000 -- hello
+    # Hello, world!
+    # #include <stdio
+    # Running time: 0.000047264s!
+    ```
+* 查看生成的内存镜像文件，包括每个切片的`.dump`文件和一个总的`.log`文件
+    ```bash
+    $ ls test
+    # checkpoint_0_100120690.dump
+    # checkpoint_100120691_200605926.dump
+    # checkpoint_200605927_300616537.dump
+    # ...
+    # test.log
+    ```
+
+### 处理内存镜像
+* 上述生成的内存镜像只是将切片处的内存保存了下来，还没有处理系统调用，需要用Python脚本替换其中的系统调用
+    * 我将系统调用处理的功能分离出来是为了解耦，因为每个切片的系统调用各自独立，如果用C处理会占用模拟的时间
+    * 而且系统调用处理需要多次调用RISC-V工具链，Python更适合这个任务
+* 使用Python脚本处理上面得到的内存镜像
+    ```bash
+    $ python3 ckpt/parse.py test/test.log
+    ```
+* 查看处理后的内存镜像文件，此时每个`.dump`文件都有一个对应的的`.cfg`文件
+    ```bash
+    $ ls test
+    # checkpoint_0_100120690.cfg
+    # checkpoint_0_100120690.dump
+    # checkpoint_100120691_200605926.cfg
+    # checkpoint_100120691_200605926.dump
+    # checkpoint_200605927_300616537.cfg
+    # checkpoint_200605927_300616537.dump
+    # ...
+    ```
+
+### 运行切片
+* 为了方便演示，这里仍然用rv8来运行切片，实际上可以用任何基于Linux的平台运行切片，如riscv-pk、gem5（SE模式）和运行Linux系统的RISC-V处理器等
+* 使用`cl`加载其中一个切片
+    ```bash
+    $ rv-sim ckpt/cl test/checkpoint_200605927_300616537.{cfg,dump}
     # cl_size    = 208
     # mc_size    = 1600
     # total_size = 1808
@@ -82,26 +86,11 @@ RISC-V Checkpoint with rv8
     # map cl to 0x60000000
     # invoke cl
     ```
-* 注：我使用重演处理系统调用，故`hello.c`的输出都不会有效果，只能看见`cl`在加载时的输出
-* 我目前还没有提供一个方便地查看运行正确性的机制，可以简单通过运行结束时dump寄存器值确认执行到了同一个位置
+* 由于切片中的系统调用均已被替换为mock调用，原程序往`stdout`的写也不会生效，故只能看到`cl`的输出，看不到原程序的输出
+* 为了确认切片运行的正确性，我提供了两种机制进行验证，即退出时寄存器状态和随机store监控，如果一切正确则不会报错，否则会看到如下信息
     ```bash
-    $ rv-sim hello
-    # instret  :              8463 time     :0x00685c57e73bdb6c
-    # pc       :0x19cc2299c3ac56d6 fcsr     :0x00000000
-    # ra       :0x0000000000014824
-    # sp       :0x000000007ffffd20 gp       :0x000000000006d110
-    # tp       :0x000000000006e780 t0       :0x000000000000000a
-    # t1       :0x2525252525252525 t2       :0x0000000000000006
-    # ...
-
-    $ rv-sim ckpt/cl test.cfg test.dump
-    # instret  :            112499 time     :0x00685befcfc4740a
-    # pc       :0x1f31484b391d7852 fcsr     :0x00000000
-    # ra       :0x0000000000014824
-    # sp       :0x000000007ffffd20 gp       :0x000000000006d110
-    # tp       :0x000000000006e780 t0       :0x000000000000000a
-    # t1       :0x2525252525252525 t2       :0x0000000000000006
-    # ...
+    $ rv-sim ckpt/cl test/checkpoint_200605927_300616537.{cfg,dump}
+    # TODO
     ```
 
 
