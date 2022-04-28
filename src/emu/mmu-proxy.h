@@ -5,10 +5,6 @@
 #ifndef rv_mmu_proxy_h
 #define rv_mmu_proxy_h
 
-#define HEXLEN(a) ((int)sizeof(a) * 2)
-#define BITLEN(a) ((int)sizeof(a) * 8)
-#define ZEXTUL(a) (((unsigned long)(a) << (64 - BITLEN(a))) >> (64 - BITLEN(a)))
-
 namespace riscv {
 
 	template <typename UX>
@@ -68,9 +64,7 @@ namespace riscv {
 					}
 				}
 			}
-			inst_t inst = riscv::inst_fetch(pc, pc_offset);
-			checkpoint.fetch(proc, pc ,inst, pc_offset);
-			return inst;
+			return riscv::inst_fetch(pc, pc_offset);
 		}
 
 		/* Note: in this simple proxy MMU model, stores beyond memory top wrap */

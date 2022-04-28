@@ -165,6 +165,7 @@ namespace riscv {
 					inst_cache[inst_cache_key].inst = inst;
 					inst_cache[inst_cache_key].dec = dec;
 				}
+				checkpoint.fetch(*this, dec, P::pc, inst, pc_offset);
 				if ((new_offset = P::inst_exec(dec, pc_offset)) != typename P::ux(-1)  ||
 					(new_offset = P::inst_priv(dec, pc_offset)) != typename P::ux(-1))
 				{

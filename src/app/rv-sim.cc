@@ -130,6 +130,7 @@ struct rv_emulator
 	uint64_t initial_seed = 0;
 	std::string checkpoint_filename;
 	uint64_t checkpoint_period = 0x7fffffffffffffffULL;
+	std::string checkpoint_monitor;
 	std::string elf_filename;
 	std::string stats_dirname;
 
@@ -190,6 +191,9 @@ struct rv_emulator
 			{ "-V", "--checkpoint-period", cmdline_arg_type_string,
 				"Take checkpoints at this period of instructions",
 				[&](std::string s) { checkpoint_period = strtoull(s.c_str(), nullptr, 10); return true; } },
+			{ "-V", "--checkpoint-monitor", cmdline_arg_type_string,
+				"Monitor every execution of the instruction at this pc",
+				[&](std::string s) { checkpoint_monitor = s; return true; } },
 			{ "-h", "--help", cmdline_arg_type_none,
 				"Show help",
 				[&](std::string s) { return (help_or_error = true); } },
@@ -238,8 +242,9 @@ struct rv_emulator
 		proc.stats_dirname = stats_dirname;
 		if (symbolicate) proc.symlookup = [&](addr_t va) { return proc.symlookup_elf(va); };
 
+		/* open checkpoint file */
 		if (!checkpoint_filename.empty()) {
-			const char *path = checkpoint_filename.c_str();
+			char *path = strdup(checkpoint_filename.c_str());
 			FILE *fout = fopen(path, "w");
 			if (fout == NULL) {
 				fprintf(stderr, "%s: %s\n", path, strerror(errno));
@@ -247,7 +252,17 @@ struct rv_emulator
 			}
 			checkpoint.out = fout;
 			checkpoint.period = checkpoint_period;
-			checkpoint.mem = new MemTrace;
+			checkpoint.dirname = dirname(path);
+		}
+
+		/* set checkpoint monitor */
+		if (!checkpoint_monitor.empty()) {
+			const char *str = checkpoint_monitor.c_str();
+			if (!strncmp(str, "0x", 2)) {
+				checkpoint.monitor_pc = strtoull(str + 2, nullptr, 16);
+			} else {
+				checkpoint.monitor_pc = strtoull(str, nullptr, 10);
+			}
 		}
 
 		/* randomise integer register state with 512 bits of entropy */

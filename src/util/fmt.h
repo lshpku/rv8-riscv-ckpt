@@ -289,20 +289,20 @@ namespace riscv {
 		}
 	};
 
-	/* An checkpoint */
 	struct CheckpointManager {
 		FILE *out;
 		char *dirname;
 		uint64_t period;
 		uint64_t begin_instret;
 		MemTrace *mem;
+		uint64_t monitor_pc;
 
 		enum {
 			ECALL = 0x00000073
 		};
 
-		template <typename P>
-		void fetch(P &proc, uint64_t addr, uint64_t inst, int length) {
+		template <typename P, typename T>
+		void fetch(P &proc, T &dec, uint64_t addr, uint64_t inst, int length) {
 			if (out) {
 				// begin new checkpoint
 				if (!mem) {
@@ -339,19 +339,20 @@ namespace riscv {
 						return;
 					}
 					// first met instruction (rvc)
-					bool can_expand = mem->prefetch(addr + 2, 2);
-					if (first_visit && length == 2 && can_expand) {
+					if (first_visit && length == 2 &&
+						mem->prefetch(addr + 2, 2)) {
 						fprintf(out, "break 0x%lx (first rvc)\n", addr);
 						break_here(proc.instret);
 						return;
 					}
 					// any instruction that can be replaced by ecall
-					if (length == 4) {
+					int rd;
+					if (length == 4 && (rd = proc.get_rd(dec)) > 0) {
 						uint32_t exec_count = mem->get_exec_counter(addr);
 						uint64_t total_exec = proc.instret - begin_instret;
-						if (exec_count < (total_exec >> 20)) {
+						if (exec_count < (total_exec >> 18)) {
 							fprintf(out, "break 0x%lx (", addr);
-							fprintf(out, "repeat %u)\n", exec_count);
+							fprintf(out, "repeat %u rd %d)\n", exec_count, rd);
 							break_here(proc.instret);
 							return;
 						}
@@ -368,6 +369,13 @@ namespace riscv {
 		}
 
 		void break_here(uint64_t instret);
+
+		template <typename P, typename T>
+		void execute(P &proc, T &dec, uint64_t addr) {
+			if (addr == monitor_pc) {
+				fprintf(stderr, "execute 0x%lx %d\n", addr, dec.rd);
+			}
+		}
 
 		template <typename T>
 		void load(uint64_t addr, T data) {
