@@ -129,7 +129,7 @@ struct rv_emulator
 	bool symbolicate = false;
 	uint64_t initial_seed = 0;
 	std::string checkpoint_filename;
-	uint64_t checkpoint_interval = 0x7fffffffffffffffULL;
+	uint64_t checkpoint_period = 0x7fffffffffffffffULL;
 	std::string elf_filename;
 	std::string stats_dirname;
 
@@ -184,12 +184,12 @@ struct rv_emulator
 			{ "-s", "--seed", cmdline_arg_type_string,
 				"Random seed",
 				[&](std::string s) { initial_seed = strtoull(s.c_str(), nullptr, 10); return true; } },
-			{ "-C", "--ckeckpoint-out", cmdline_arg_type_string,
+			{ "-C", "--checkpoint-out", cmdline_arg_type_string,
 				"Dump checkpoints to this file",
 				[&](std::string s) { checkpoint_filename = s; return true; } },
 			{ "-V", "--checkpoint-period", cmdline_arg_type_string,
 				"Take checkpoints at this period of instructions",
-				[&](std::string s) { checkpoint_interval = strtoull(s.c_str(), nullptr, 10); return true; } },
+				[&](std::string s) { checkpoint_period = strtoull(s.c_str(), nullptr, 10); return true; } },
 			{ "-h", "--help", cmdline_arg_type_none,
 				"Show help",
 				[&](std::string s) { return (help_or_error = true); } },
@@ -239,13 +239,15 @@ struct rv_emulator
 		if (symbolicate) proc.symlookup = [&](addr_t va) { return proc.symlookup_elf(va); };
 
 		if (!checkpoint_filename.empty()) {
-			const char *pathname = checkpoint_filename.c_str();
-			checkpoint_file = fopen(pathname, "w");
-			if (checkpoint_file == NULL) {
-				fprintf(stderr, "%s: %s\n", pathname, strerror(errno));
+			const char *path = checkpoint_filename.c_str();
+			FILE *fout = fopen(path, "w");
+			if (fout == NULL) {
+				fprintf(stderr, "%s: %s\n", path, strerror(errno));
 				exit(-1);
 			}
-			cur_ckpt = new CkptDesc;
+			checkpoint.out = fout;
+			checkpoint.period = checkpoint_period;
+			checkpoint.mem = new MemTrace;
 		}
 
 		/* randomise integer register state with 512 bits of entropy */
