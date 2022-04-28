@@ -628,29 +628,37 @@ void MemTrace::dump(FILE *dump_file, FILE *cfg_file)
 
 CheckpointManager riscv::checkpoint = {};
 
-void CheckpointManager::dump(uint64_t current_instret)
+void CheckpointManager::break_here(uint64_t instret)
 {
-	std::string path;
-	sprintf(path, "checkpoint_%lu_%lu.dump", begin_instret, current_instret);
+	std::string filename;
+	sprintf(filename, "checkpoint_%lu_%lu.dump", begin_instret, instret);
+	std::string filepath = dirname + ("/" + filename);
 
-	FILE *dump_file = fopen(path.c_str(), "wb");
+	FILE *dump_file = fopen(filepath.c_str(), "wb");
 	if (!dump_file) {
-		fprintf(stderr, "%s: %s\n", path.c_str(), strerror(errno));
+		fprintf(stderr, "%s: %s\n", filepath.c_str(), strerror(errno));
 		::exit(-1);
 	}
-	fprintf(out, "file %s\n", path.c_str());
+	fprintf(out, "file %s\n", filename.c_str());
 
 	mem->dump(dump_file, out);
 
 	fclose(dump_file);
+	delete mem;
+	mem = NULL;
 }
 
 void CheckpointManager::syscall(uint64_t retval, void *addr, size_t size)
 {
-	if (out) {
-		fprintf(out, " = %lu\n", retval);
-		for (size_t i = 0; i < size; i++) {
-			mem->store((uint64_t)addr + i, (char)0);
+	if (mem) {
+		fprintf(out, " = %lx", retval);
+		if (addr) {
+			fprintf(out, " %p ", addr);
+			for (size_t i = 0; i < size; i++) {
+				mem->store((uint64_t)addr + i, (char)0);
+				fprintf(out, "%02x", ((uint8_t *)addr)[i]);
+			}
 		}
+		fprintf(out, "\n");
 	}
 }

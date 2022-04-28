@@ -185,18 +185,39 @@ namespace riscv {
 			visited[A(offs)] |= B(offs);
 			content[offs] = val;
 		}
+
+		PageRec() { memset(this, 0, sizeof(PageRec)); }
+	};
+
+	struct ExecRec {
+		// only count non-rvc instructions
+		uint32_t count[1024];
+
+		uint32_t &get(int offs) {
+			return count[(offs >> 2) & 0x3ff];
+		}
+
+		ExecRec() { memset(this, 0, sizeof(ExecRec)); }
 	};
 
 	struct MemTrace {
 		std::unordered_map<uint64_t, PageRec *> pages;
+		std::unordered_map<uint64_t, ExecRec *> execs;
 
 		PageRec* get_page(uint64_t pn) {
 			PageRec *&page = pages[pn];
 			if (page == NULL) {
 				page = new PageRec;
-				memset(page, 0, sizeof(PageRec));
 			}
 			return page;
+		}
+
+		uint32_t &get_exec_counter(uint64_t addr) {
+			ExecRec *&exec = execs[addr >> 12];
+			if (exec == NULL) {
+				exec = new ExecRec;
+			}
+			return exec->get(addr & 0xfff);
 		}
 
 		bool fetch(uint64_t addr, uint64_t inst, int length) {
@@ -214,7 +235,25 @@ namespace riscv {
 					page->put((addr + i) & 0xfff, (inst >> (i * 8)) & 0xff);
 				}
 			}
+			if (length == 4) {
+				get_exec_counter(addr)++;
+			}
 			return first_visit;
+		}
+
+		bool prefetch(uint64_t addr, int length) {
+			PageRec *page = NULL;
+			uint64_t pn = 0;
+			for (int i = 0; i < length; i++) {
+				if (!page || (addr + i) >> 12 != pn) {
+					pn = (addr + i) >> 12;
+					page = get_page(pn);
+				}
+				if (page->is_visited((addr + i) & 0xfff)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		template <typename T>
@@ -244,12 +283,16 @@ namespace riscv {
 			for (auto &page : pages) {
 				delete page.second;
 			}
+			for (auto &exec : execs) {
+				delete exec.second;
+			}
 		}
 	};
 
 	/* An checkpoint */
 	struct CheckpointManager {
 		FILE *out;
+		char *dirname;
 		uint64_t period;
 		uint64_t begin_instret;
 		MemTrace *mem;
@@ -261,28 +304,74 @@ namespace riscv {
 		template <typename P>
 		void fetch(P &proc, uint64_t addr, uint64_t inst, int length) {
 			if (out) {
+				// begin new checkpoint
+				if (!mem) {
+					mem = new MemTrace;
+					begin_instret = proc.instret;
+					fprintf(out, "begin 0x%lx\n", addr);
+					fprintf(out, "ireg =");
+					for (int i = 0; i < 32; i++) {
+						fprintf(out, " %lx", (uint64_t)proc.ireg[i]);
+					}
+					fprintf(out, "\nfreg = ");
+					for (int i = 0; i < 32; i++) {
+						fprintf(out, " %llx", proc.freg[i].r.xu.val);
+					}
+					fprintf(out, "\n");
+				}
+
 				bool first_visit = mem->fetch(addr, inst ,length);
+
+				// look for breakpoint
+				// The breakpoint instruction is actually skipped in
+				// consecutive checkpoints
+				if (proc.instret - begin_instret > period) {
+					// ecall
+					if (inst == ECALL) {
+						fprintf(out, "break 0x%lx (ecall)\n", addr);
+						break_here(proc.instret);
+						return;
+					}
+					// first met instruction
+					if (first_visit && length == 4) {
+						fprintf(out, "break 0x%lx (first)\n", addr);
+						break_here(proc.instret);
+						return;
+					}
+					// first met instruction (rvc)
+					bool can_expand = mem->prefetch(addr + 2, 2);
+					if (first_visit && length == 2 && can_expand) {
+						fprintf(out, "break 0x%lx (first rvc)\n", addr);
+						break_here(proc.instret);
+						return;
+					}
+					// any instruction that can be replaced by ecall
+					if (length == 4) {
+						uint32_t exec_count = mem->get_exec_counter(addr);
+						uint64_t total_exec = proc.instret - begin_instret;
+						if (exec_count < (total_exec >> 20)) {
+							fprintf(out, "break 0x%lx (", addr);
+							fprintf(out, "repeat %u)\n", exec_count);
+							break_here(proc.instret);
+							return;
+						}
+					}
+				}
+
+				// mark syscall
+				// This output line is expected to be completed with
+				// a return value
 				if (inst == ECALL) {
 					fprintf(out, "syscall 0x%lx", addr);
-				}
-				uint64_t insts = proc.instret - begin_instret;
-				if (insts > period) {
-					if (inst == ECALL || (first_visit && length == 4)) {
-						fprintf(out, "break 0x%lx\n", addr);
-						dump(proc.instret);
-						delete mem;
-						mem = new MemTrace;
-						begin_instret = proc.instret;
-					}
 				}
 			}
 		}
 
-		void dump(uint64_t current_instret);
+		void break_here(uint64_t instret);
 
 		template <typename T>
 		void load(uint64_t addr, T data) {
-			if (out) {
+			if (mem) {
 				mem->load(addr, data);
 			}
 		}
@@ -295,9 +384,9 @@ namespace riscv {
 
 		template <typename P>
 		void exit(P &proc, int rc) {
-			if (out) {
-				fprintf(out, " = exit\n");
-				dump(proc.instret);
+			if (mem) {
+				fprintf(out, " = %x exit\n", rc);
+				break_here(proc.instret);
 				fclose(out);
 			}
 		}
