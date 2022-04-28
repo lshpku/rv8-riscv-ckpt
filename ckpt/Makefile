@@ -7,12 +7,18 @@ OBJCOPY = $(TOOLCHAIN)objcopy
 
 all:
 
-near.o: near.S
-ifeq ($(RETURN_ONLY), 1)
-	$(CC) -DNEAR_BUF=$(NEAR_BUF) -DRETURN_ONLY -c -o $@ $<
-else
-	$(CC) -DNEAR_BUF=$(NEAR_BUF) -DFAR_CALL=$(FAR_CALL) -c -o $@ $<
+ifdef FAR_CALL
+$(eval CFLAGS += -DFAR_CALL=$(FAR_CALL))
 endif
+ifdef ALTER_RD
+$(eval CFLAGS += -DALTER_RD=$(ALTER_RD))
+endif
+ifdef NORVC
+$(eval CFLAGS += -DNORVC=$(NORVC))
+endif
+
+near.o: near.S
+	$(CC) $(CFLAGS) -DNEAR_BUF=$(NEAR_BUF) -c -o $@ $<
 near.partial.o: near.o
 	$(LD) -e 0x10000 -o $@ $^
 near.bin: near.partial.o
@@ -28,11 +34,7 @@ far.bin: far.partial.o
 	$(OBJCOPY) -O binary $< $@
 
 jump.o: jump.S
-ifeq ($(NORVC), 1)
-	$(CC) -DOFFSET=$(OFFSET) -DNORVC -c -o $@ $<
-else
-	$(CC) -DOFFSET=$(OFFSET) -c -o $@ $<
-endif
+	$(CC) $(CFLAGS) -DOFFSET=$(OFFSET) -c -o $@ $<
 jump.partial.o: jump.o
 	$(LD) -e 0 -o $@ $^
 jump.bin: jump.partial.o
