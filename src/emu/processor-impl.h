@@ -344,6 +344,74 @@ namespace riscv {
 				P::ireg[dec.rd] = (mode >= csr_mode) ? s32(u32(reg >> 32)) : 0;
 			}
 		}
+
+		int get_rd(T &dec)
+		{
+			switch (dec.op) {
+				/* Integer Register Immediate */
+				case rv_op_addi:
+				case rv_op_slti:
+				case rv_op_sltiu:
+				case rv_op_andi:
+				case rv_op_ori:
+				case rv_op_xori:
+				case rv_op_slli:
+				case rv_op_srli:
+				case rv_op_srai:
+				case rv_op_lui:
+				case rv_op_auipc:
+				/* Integer Register-Register */
+				case rv_op_add:
+				case rv_op_slt:
+				case rv_op_sltu:
+				case rv_op_and:
+				case rv_op_or:
+				case rv_op_xor:
+				case rv_op_sll:
+				case rv_op_srl:
+				case rv_op_sub:
+				case rv_op_sra:
+				/* Load */
+				case rv_op_lb:
+				case rv_op_lh:
+				case rv_op_lw:
+				case rv_op_lbu:
+				case rv_op_lhu:
+				/* RV64 */
+				case rv_op_addiw:
+				case rv_op_slliw:
+				case rv_op_srliw:
+				case rv_op_sraiw:
+				case rv_op_addw:
+				case rv_op_sllw:
+				case rv_op_srlw:
+				case rv_op_subw:
+				case rv_op_sraw:
+				case rv_op_lwu:
+				case rv_op_ld:
+				/* Multiplication and Division */
+				case rv_op_mul:
+				case rv_op_mulh:
+				case rv_op_mulhsu:
+				case rv_op_mulhu:
+				case rv_op_div:
+				case rv_op_divu:
+				case rv_op_rem:
+				case rv_op_remu:
+				case rv_op_mulw:
+				case rv_op_divw:
+				case rv_op_divuw:
+				case rv_op_remw:
+				case rv_op_remuw:
+					// when rd == x0, it's equal to mv a0, a0
+					if (dec.rd == rv_ireg_x0) {
+						return rv_ireg_a0;
+					}
+					return dec.rd;
+				default:
+					return -1;
+			}
+		}
 	};
 
 }
