@@ -170,6 +170,7 @@ namespace riscv {
 					(new_offset = P::inst_priv(dec, pc_offset)) != typename P::ux(-1))
 				{
 					if (P::log) P::print_log(dec, inst);
+					checkpoint.execute(*this, dec, P::pc);
 					P::pc += new_offset;
 					P::instret++;
 				} else {

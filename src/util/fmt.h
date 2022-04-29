@@ -309,11 +309,11 @@ namespace riscv {
 					mem = new MemTrace;
 					begin_instret = proc.instret;
 					fprintf(out, "begin 0x%lx\n", addr);
-					fprintf(out, "ireg =");
+					fprintf(out, "ireg");
 					for (int i = 0; i < 32; i++) {
 						fprintf(out, " %lx", (uint64_t)proc.ireg[i]);
 					}
-					fprintf(out, "\nfreg = ");
+					fprintf(out, "\nfreg");
 					for (int i = 0; i < 32; i++) {
 						fprintf(out, " %llx", proc.freg[i].r.xu.val);
 					}
@@ -328,20 +328,20 @@ namespace riscv {
 				if (proc.instret - begin_instret > period) {
 					// ecall
 					if (inst == ECALL) {
-						fprintf(out, "break 0x%lx (ecall)\n", addr);
+						fprintf(out, "break 0x%lx ecall\n", addr);
 						break_here(proc.instret);
 						return;
 					}
 					// first met instruction
 					if (first_visit && length == 4) {
-						fprintf(out, "break 0x%lx (first)\n", addr);
+						fprintf(out, "break 0x%lx first\n", addr);
 						break_here(proc.instret);
 						return;
 					}
 					// first met instruction (rvc)
 					if (first_visit && length == 2 &&
 						mem->prefetch(addr + 2, 2)) {
-						fprintf(out, "break 0x%lx (first rvc)\n", addr);
+						fprintf(out, "break 0x%lx firstrvc\n", addr);
 						break_here(proc.instret);
 						return;
 					}
@@ -351,8 +351,8 @@ namespace riscv {
 						uint32_t exec_count = mem->get_exec_counter(addr);
 						uint64_t total_exec = proc.instret - begin_instret;
 						if (exec_count < (total_exec >> 18)) {
-							fprintf(out, "break 0x%lx (", addr);
-							fprintf(out, "repeat %u rd %d)\n", exec_count, rd);
+							fprintf(out, "break 0x%lx repeat %u %d\n",
+								addr, exec_count, rd);
 							break_here(proc.instret);
 							return;
 						}
@@ -373,7 +373,7 @@ namespace riscv {
 		template <typename P, typename T>
 		void execute(P &proc, T &dec, uint64_t addr) {
 			if (addr == monitor_pc) {
-				fprintf(stderr, "execute 0x%lx %d\n", addr, dec.rd);
+				printf("execute %lx\n", (uint64_t)proc.ireg[dec.rd]);
 			}
 		}
 
@@ -393,7 +393,7 @@ namespace riscv {
 		template <typename P>
 		void exit(P &proc, int rc) {
 			if (mem) {
-				fprintf(out, " = %x exit\n", rc);
+				fprintf(out, " %x exit\n", rc);
 				break_here(proc.instret);
 				fclose(out);
 			}

@@ -651,7 +651,7 @@ void CheckpointManager::break_here(uint64_t instret)
 void CheckpointManager::syscall(uint64_t retval, void *addr, size_t size)
 {
 	if (mem) {
-		fprintf(out, " = %lx", retval);
+		fprintf(out, " %lx", retval);
 		if (addr) {
 			fprintf(out, " %p ", addr);
 			for (size_t i = 0; i < size; i++) {
