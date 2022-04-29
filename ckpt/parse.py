@@ -2,7 +2,7 @@ import os
 import io
 import argparse
 import hashlib
-from subprocess import Popen, DEVNULL
+from subprocess import Popen, PIPE, DEVNULL
 from typing import Union, List, Tuple
 
 parser = argparse.ArgumentParser()
@@ -58,7 +58,7 @@ class MakeHelper:
         return near + ret
 
     @staticmethod
-    def far(far_stack_top: int, verbose: bool = True):
+    def far(far_stack_top: int, verbose: bool = False):
         args = ['FAR_STACK_TOP=0x%x' % far_stack_top]
         if verbose:
             args += ['VERBOSE=1']
@@ -233,11 +233,15 @@ class PageMap:
 
 class SysCall:
 
-    def __init__(self):
-        self.addr = None
-        self.retval = None
-        self.waddr = None
-        self.wdata = None
+    def __init__(self, addr: int, retval: int = None,
+                 alter_rd: int = None, is_break: bool = False,
+                 waddr: int = None, wdata: bytes = None):
+        self.addr = addr
+        self.retval = retval
+        self.alter_rd = alter_rd
+        self.is_break = is_break
+        self.waddr = waddr
+        self.wdata = wdata
 
     def set_wdata(self, wdata: str):
         assert len(wdata) % 2 == 0
@@ -247,12 +251,6 @@ class SysCall:
         self.wdata = bytes(wbuf)
 
     def make_entry(self) -> bytes:
-        '''
-        Replay table entry types:
-            VALID: copy data
-            RET  : return from syscall
-            EXIT : handle exit
-        '''
         buf = []
 
         if self.waddr is not None:
@@ -265,23 +263,14 @@ class SysCall:
             buf.append(self.wdata)
             buf.append(b'\0' * padding_size)
 
-        buf.append(b'\0' * 8)
-        buf.append(self.retval.to_bytes(8, 'little'))
+        if not self.is_break:
+            buf.append((0).to_bytes(8, 'little'))
+            buf.append(self.retval.to_bytes(8, 'little'))
+        else:
+            buf.append((-1).to_bytes(8, 'little', signed=True))
+            buf.append((0).to_bytes(8, 'little'))
 
         return b''.join(buf)
-
-
-class Breakpoint(SysCall):
-
-    def __init__(self, addr: int):
-        super().__init__()
-        self.addr = addr
-        self.repeat_rd = None
-
-    def make_entry(self) -> bytes:
-        addr = (-1).to_bytes(8, 'little', signed=True)
-        retval = (0).to_bytes(8, 'little')
-        return addr + retval
 
 
 class Checkpoint:
@@ -290,13 +279,11 @@ class Checkpoint:
         self.entry_pc = None
         self.regs = []  # pc, 31 int, 32 fp
         self.syscalls = []
-        self.repeat = None
+        self.breakpoint = None  # (pc, rd, repeat)
         self.pages = PageMap()
         self.path_prefix = None
 
-    def process(self):
-        print('processing', self.path_prefix, end='', flush=True)
-
+    def process_once(self, verbose=False):
         # reserve space for near_calls
         free_list = self.pages.make_free_list()
         near_map = {}  # base_addr: near_addr
@@ -359,7 +346,7 @@ class Checkpoint:
         self.regs[0] = entry_addr.to_bytes(8, 'little')
 
         # write supervisor
-        far_call = MakeHelper.far(far_stack_top)
+        far_call = MakeHelper.far(far_stack_top, verbose)
         self.pages.put(far_addr, far_call)
         self.pages.put(replay_table_addr, replay_table)
         self.pages.put(regs_addr, b''.join(self.regs))
@@ -374,7 +361,44 @@ class Checkpoint:
         dumpfile.close()
         cfgfile.write('%x\n' % regs_addr)
         cfgfile.close()
-        print(' done')
+
+    def process(self):
+        # break with ecall or first-executed instruction
+        if self.breakpoint is None:
+            self.process_once()
+            return
+
+        # break with a repeating instruction
+        # run the checkpoint and trace the execution of
+        # the breakpoint instruction
+        self.process_once(verbose=True)
+        cmd = ['rv-sim', '-M', hex(self.breakpoint.addr), 'cl', '']
+        p = Popen(cmd, bufsize=0, stdout=PIPE)
+        repeat = self.breakpoint.repeat
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                raise Exception('expected cl')
+            if line == 'invoke cl\n':
+                break
+
+        # insert execution into the syscall sequence
+        syscall_iter = iter(self.syscalls)
+        syscalls = []
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                raise Exception('incomplete execution')
+            if line.startswith('execute'):
+                _, val = line.split()
+                val = int(val, 16)
+                bp = SysCall(self.breakpoint.addr)
+                repeat -= 1
+                if repeat == 0:
+                    p.kill()
+                    break
+            elif line.startswith('syscall'):
+                syscalls.append(next(syscall_iter))
 
     def make_replay_table(self):
         buf = []
@@ -427,23 +451,23 @@ def parse_log(path):
         elif tokens[0] == 'syscall':
             addr = int(tokens[1], 16)
             if len(tokens) > 3 and tokens[3] == 'exit':
-                cur.breakpoint = Breakpoint(addr)
+                syscall = SysCall(addr, is_break=True)
             else:
-                syscall = SysCall()
-                syscall.addr = addr
-                syscall.retval = int(tokens[2], 16)
+                syscall = SysCall(addr, int(tokens[2], 16))
                 if len(tokens) > 3:
                     syscall.waddr = int(tokens[3], 16)
                     syscall.set_wdata(tokens[4])
-                cur.syscalls.append(syscall)
+            cur.syscalls.append(syscall)
 
         elif tokens[0] == 'break':
-            bp = Breakpoint(int(tokens[1], 16))
+            addr = int(tokens[1], 16)
             if tokens[2] == 'repeat':
-                bp.repeat_rd = int(tokens[4])
-                cur.breakpoint = bp
+                repeat = int(tokens[3])
+                rd = int(tokens[4])
+                cur.breakpoint = (addr, rd, repeat)
             else:
-                cur.syscalls.append(bp)
+                syscal = SysCall(addr, is_break=True)
+                cur.syscalls.append(syscal)
 
         elif tokens[0] == 'file':
             path = os.path.join(dirname, tokens[1])
