@@ -18,10 +18,8 @@ replay_cfg *replay(replay_cfg *head)
     while (head->addr != REPLAY_RET) {
         // handle exit
         if (head->addr == REPLAY_EXIT) {
-#ifdef VERBOSE
             const char *msg = "exit\n";
-            raw_write(0, msg, sizeof(msg) - 1);
-#endif
+            raw_write(1, msg, sizeof(msg) - 1);
             raw_exit(head->size);
         }
 
@@ -43,7 +41,7 @@ replay_cfg *replay(replay_cfg *head)
         msg[sizeof(msg) - 3 - i] = c;
         rc >>= 4;
     }
-    raw_write(0, msg, sizeof(msg) - 1);
+    raw_write(1, msg, sizeof(msg) - 1);
 #endif
 
     // return with the address of next entry
