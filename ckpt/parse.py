@@ -1,7 +1,8 @@
 import os
+import io
 import argparse
 from subprocess import Popen, DEVNULL
-from typing import Union
+from typing import Union, List, Tuple
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
@@ -10,12 +11,9 @@ basedir = os.path.dirname(__file__)
 
 PAGE_OFFS = 12
 PAGE_SIZE = 1 << PAGE_OFFS
+PAGE_OFFS_MASK = PAGE_SIZE - 1
 FIRST_PN = 0x10
 ECALL = '00000073'
-
-
-def page_align(a):
-    return (a + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1)
 
 
 class chdir:
@@ -50,11 +48,13 @@ def make_jump(offset):
 
 
 def make_near(ret_pc: int, near_pc: int, near_buf: int,
-              far_pc: int = None) -> bytes:
+              far_pc: int = None, norvc: bool = True) -> bytes:
     make_clean()
     cmd = ['make', 'near.bin', 'NEAR_BUF=%d' % near_buf]
     if far_pc is not None:
         cmd += ['FAR_CALL=%d' % far_pc]
+    if norvc:
+        cmd += ['NORVC=1']
     with chdir(basedir):
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
@@ -68,7 +68,7 @@ def make_near(ret_pc: int, near_pc: int, near_buf: int,
 
 def make_far(far_stack_top):
     make_clean()
-    cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top]
+    cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top, 'VERBOSE=1']
     with chdir(basedir):
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
@@ -79,77 +79,166 @@ def make_far(far_stack_top):
 
 class Page:
 
-    def __init__(self, bitmap: bytes, data: bytes):
-        self.bitmap = int.from_bytes(bitmap, 'little')
-        self.data = bytearray(data)
-
-    def put(self, addr: int, data: Union[int, str, bytes],
-            force: bool = False) -> int:
-        if isinstance(data, int):
-            data = b'\0' * data
-        elif isinstance(data, str):
-            data = int(data, 16).to_bytes(len(data) // 2, 'little')
+    def __init__(self, bitmap: Union[int, bytes], data: bytes):
+        if isinstance(bitmap, int):
+            self.bitmap = bitmap
         else:
-            assert isinstance(data, bytes)
+            self.bitmap = int.from_bytes(bitmap, 'little')
+        self.data = io.BytesIO(data)
 
-        put = 0
-        for i, b in enumerate(data):
-            pn = (addr + i) >> PAGE_OFFS
-            offs = (addr + i) & (PAGE_SIZE - 1)
-            if pn not in self.page_map:
-                self.page_map[pn] = [None] * PAGE_SIZE
-            page = self.page_map[pn]
-            if force or page[offs] is None:
-                page[offs] = b
-                put += 1
-        return put
+    def put(self, offs: int, data: bytes):
+        assert offs + len(data) <= PAGE_SIZE
+        self.data.seek(offs)
+        self.data.write(data)
+        self.bitmap |= ((1 << len(data)) - 1) << offs
 
-    def init_reserve(self):
+    def is_free(self, offs: int) -> bool:
+        return self.bitmap & (1 << offs) == 0
+
+    def get(self) -> bytes:
+        self.data.seek(0)
+        data = self.data.read()
+        assert len(data) == PAGE_SIZE
+        return data
+
+
+class PageMap:
+
+    def __init__(self):
+        self._map = {}  # pn: Page
+
+    def __getitem__(self, pn: int) -> Page:
+        if pn not in self._map:
+            self._map[pn] = Page(0, b'\0' * PAGE_SIZE)
+        return self._map[pn]
+
+    def __setitem__(self, pn: int, page: Page):
+        self._map[pn] = page
+
+    def put(self, addr: int, data: bytes):
+        begin_pn = addr >> PAGE_OFFS
+        end_pn = (addr + len(data) + PAGE_SIZE - 1) >> PAGE_OFFS
+        for pn in range(begin_pn, end_pn):
+            begin_addr = max(addr, pn * PAGE_SIZE)
+            end_addr = min(addr + len(data), (pn + 1) * PAGE_SIZE)
+            offs = begin_addr & PAGE_OFFS_MASK
+            part = data[begin_addr - addr: end_addr - addr]
+            self[pn].put(offs, part)
+
+    def make_free_list(self) -> List[Tuple[int, int]]:
+        free_list = []
+        page_list = sorted(self._map.items())
         cur = FIRST_PN * PAGE_SIZE
-        for pn, content in self.get_page_list():
+
+        for pn, page in page_list:
             pa = pn * PAGE_SIZE
-            for i, c in enumerate(content):
-                if cur is None and c is None:
+            for i in range(PAGE_SIZE):
+                free = page.is_free(i)
+                if cur is None and free:  # begin a free range
                     cur = pa + i
-                elif cur is not None and c is not None:
+                elif cur is not None and not free:  # end
+                    # align boundaries to 2 as instructions are 2-aligned
                     begin = (cur + 1) & ~1
                     end = (pa + i) & ~1
-                    if begin < end:  # align to 2
-                        self.free_list.append((begin, end))
+                    if begin < end:
+                        free_list.append((begin, end))
                     cur = None
 
-    def reserve(self, base: int, size: int) -> int:
-        free_i = None
-        for i, (begin, end) in enumerate(self.free_list):
-            if end - begin < size:
-                continue
-            if end <= base:
-                if base - end + size < 0x1000000:
-                    free_i = i
-            elif begin > base:
-                if begin + size - base >= 0x1000000:
-                    continue
-                if free_i is None:
-                    free_i = i
-                else:
-                    _, last_end = self.free_list[free_i]
-                    if base - last_end > begin - base:
-                        free_i = i
-                break
-        if free_i is None:
-            raise Exception('cannot reserve for %x (%d)' % (base, size))
+        return free_list
 
-        begin, end = self.free_list[free_i]
-        if end <= base:
-            addr = end - size
-            self.free_list[free_i] = (begin, end - size)
+    def reserve(self, free_list: List[Tuple[int, int]],
+                base_addr: int, size: int) -> int:
+        # get upper bound and lower bound of free range
+        if base_addr < free_list[0][0]:
+            s, e = -1, 0
+        elif base_addr >= free_list[-1][1]:
+            s, e = len(free_list) - 1, len(free_list)
         else:
-            addr = begin
-            self.free_list[free_i] = (begin + size, end)
-        return addr
+            s, e = 0, len(free_list) - 1
+            while s + 1 < e:  # binary search
+                m = (s + e) // 2
+                if free_list[m][1] <= base_addr:
+                    s = m
+                elif free_list[m][0] > base_addr:
+                    e = m
 
-    def get_page_list(self):
-        return sorted(self.page_map.items())
+        # search both upwards and downwards
+        s_hit, e_hit = False, False
+        while True:
+            do_s = s >= 0 and not s_hit
+            do_e = e < len(free_list) and not e_hit
+            if not (do_s or do_e):
+                break
+            if do_s:
+                if free_list[s][0] + size <= free_list[s][1]:
+                    s_hit = True
+                s -= 1
+            if do_e:
+                if free_list[e][0] + size >= free_list[e][1]:
+                    e_hit = True
+                e += 1
+
+        # select the nearest free range
+        if s_hit and e_hit:
+            s_dist = base_addr - free_list[s][1]
+            e_dist = free_list[e][0] - base_addr
+            if s_dist < e_dist:
+                use_i = s
+            else:
+                use_i = e
+        elif s_hit:
+            use_i = s
+        elif e_hit:
+            use_i = e
+        else:
+            raise Exception('failed to researve')
+
+        # update free_list and page map
+        begin, end = free_list[use_i]
+        if free_list[use_i][0] > base_addr:
+            free_list[use_i] = (begin + size, end)
+            near_addr = begin
+        else:
+            free_list[use_i] = (begin, end - size)
+            near_addr = end - size
+        self.put(near_addr, b'\0' * size)
+        return near_addr
+
+    def reserve_page(self, size: int) -> int:
+        pages_needed = (size + PAGE_SIZE - 1) >> PAGE_OFFS
+        cur = FIRST_PN
+        pn_list = sorted(self._map.keys())
+        for pn in pn_list:
+            if pn - cur < pages_needed:
+                cur = pn + 1
+            else:
+                break
+        return cur
+
+    def dump(self, dumpfile: io.BytesIO, cfgfile: io.StringIO):
+        # merge successive pages
+        page_list = sorted(self._map.items())
+        last_pn = None
+        cfgs = []  # (pn, count)
+        for pn, _ in page_list:
+            if last_pn is None or last_pn + 1 < pn:
+                cfgs.append([pn, 1])
+            else:
+                cfgs[-1][1] += 1
+            last_pn = pn
+
+        # write configs
+        cfgfile.write('%d\n' % len(cfgs))
+        offs = 0
+        for pn, count in cfgs:
+            addr = pn * PAGE_SIZE
+            size = count * PAGE_SIZE
+            cfgfile.write('%x\t%x\t%x\n' % (addr, offs, size))
+            offs += size
+
+        # write pages
+        for i, (pn, page) in enumerate(page_list):
+            dumpfile.write(page.get())
 
 
 class SysCall:
@@ -208,14 +297,99 @@ class Breakpoint(SysCall):
 class Checkpoint:
 
     def __init__(self):
-        self.begin = None
+        self.entry_pc = None
         self.regs = []  # pc, 31 int, 32 fp
         self.syscalls = []
-        self.breakpoint = None
-        self.page_map = {}  # pn: Page
+        self.repeat = None
+        self.pages = PageMap()
+        self.path_prefix = None
 
     def process(self):
-        pass
+        print('processing', self.path_prefix)
+        # reserve space for near_calls
+        free_list = self.pages.make_free_list()
+        near_map = {}  # base_addr: near_addr
+
+        size = len(make_near(0, 0, 0, 0))
+        for syscall in self.syscalls:
+            if syscall.addr in near_map:
+                continue
+            near_addr = self.pages.reserve(free_list, syscall.addr, size)
+            near_map[syscall.addr] = near_addr
+
+        size = len(make_near(0, 0, 0))
+        entry_addr = self.pages.reserve(free_list, self.entry_pc, size)
+
+        # reserve pages for supervisor
+        '''
+        Supervisor (SV) structure:
+                +--------------+
+                |              | replay_table_head
+            rw  |  far_stack   |  4K
+                |              | near_buf
+                +--------------+
+                |   regfile    |
+                | ------------ |
+            ro  |              |  4K * N
+                | replay_table |
+                |              |
+                +--------------+
+            rx  |   far_call   |  4K
+                +--------------+
+        '''
+        replay_table = self.make_replay_table()
+        rw_size = PAGE_SIZE
+        ro_size = len(replay_table) + 8 * len(self.regs)
+        ro_size = (ro_size + PAGE_OFFS_MASK) & ~PAGE_OFFS_MASK
+        rx_size = PAGE_SIZE
+        sv_size = rx_size + ro_size + rw_size
+
+        sv_pn = self.pages.reserve_page(sv_size)
+
+        far_addr = sv_pn * PAGE_SIZE
+        replay_table_addr = far_addr + rx_size
+        regs_addr = replay_table_addr + len(replay_table)
+        near_buf = replay_table_addr + ro_size
+        far_stack_top = near_buf + rw_size
+
+        # write near_calls
+        for syscall in self.syscalls:
+            if syscall.addr not in near_map:
+                continue
+            near_addr = near_map.pop(syscall.addr)
+            trap = make_jump(near_addr - syscall.addr)
+            near_call = make_near(
+                syscall.addr + 4, near_addr, near_buf, far_addr)
+            self.pages.put(syscall.addr, trap)
+            self.pages.put(near_addr, near_call)
+
+        entry_call = make_near(self.entry_pc, entry_addr, near_buf)
+        self.pages.put(entry_addr, entry_call)
+        self.regs[0] = entry_addr.to_bytes(8, 'little')
+
+        # write supervisor
+        far_call = make_far(far_stack_top)
+        self.pages.put(far_addr, far_call)
+        self.pages.put(replay_table_addr, replay_table)
+        self.pages.put(regs_addr, b''.join(self.regs))
+        self.pages.put(near_buf, self.regs[2])
+        self.pages.put(far_stack_top - 8,
+                       replay_table_addr.to_bytes(8, 'little'))
+
+        # dump pages and cfg
+        dumpfile = open(self.path_prefix + '.1.dump', 'wb')
+        cfgfile = open(self.path_prefix + '.1.cfg', 'w')
+        self.pages.dump(dumpfile, cfgfile)
+        dumpfile.close()
+        cfgfile.write('%x\n' % regs_addr)
+        cfgfile.close()
+        print('done', self.path_prefix)
+
+    def make_replay_table(self):
+        buf = []
+        for syscall in self.syscalls:
+            buf.append(syscall.make_entry())
+        return b''.join(buf)
 
 
 def parse_log(path):
@@ -236,24 +410,28 @@ def parse_log(path):
     cur = None
     dumpfile = None
 
+    def flush():
+        if cur is not None:
+            # close dumpfile first as process() will overwrite it
+            dumpfile.close()
+            cur.process()
+
     while True:
         line = f.readline()
         if not line:
+            flush()
             break
         tokens = line.split()
 
         if tokens[0] == 'begin':
-            if cur is not None:
-                cur.process()
-            if dumpfile is not None:
-                dumpfile.close()
-                dumpfile = None
+            flush()
             cur = Checkpoint()
-            cur.begin = int(tokens[1], 16)
+            cur.entry_pc = int(tokens[1], 16)
 
         elif tokens[0] in {'ireg', 'freg'}:
             for val in tokens[1:]:
-                cur.regs.append(int(val, 16))
+                reg = int(val, 16).to_bytes(8, 'little')
+                cur.regs.append(reg)
 
         elif tokens[0] == 'syscall':
             addr = int(tokens[1], 16)
@@ -276,16 +454,13 @@ def parse_log(path):
         elif tokens[0] == 'file':
             path = os.path.join(dirname, tokens[1])
             dumpfile = open(path, 'rb')
+            cur.path_prefix, _ = os.path.splitext(path)
         elif tokens[0] == 'dump':
             bitmap = dumpfile.read(PAGE_SIZE // 8)
             data = dumpfile.read(PAGE_SIZE)
             pn = int(tokens[1], 16)
-            cur.page_map[pn] = Page(bitmap, data)
+            cur.pages[pn] = Page(bitmap, data)
 
-    if cur is not None:
-        cur.process()
-    if dumpfile is not None:
-        dumpfile.close()
     f.close()
 
 
@@ -293,77 +468,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     parse_log(args.path)
-    exit()
-
-    # reserve places for near_calls
-    make_clean()
-    near_size = len(make_near(0, 0, 0, 0))
-    near_map = {}  # syscall_addr: near_addr
-    pages.init_reserve()
-    for syscall in syscalls:
-        addr = syscall[0]
-        if addr in near_map:
-            continue
-        near_map[addr] = pages.reserve(addr, near_size)
-
-    entry_pc = int.from_bytes(regs[0], 'little')
-    entry_size = len(make_near(0, 0, 0))
-    entry_near_addr = pages.reserve(entry_pc, entry_size)
-
-    # find a place to put supervisor
-    replay_table = make_replay_table(syscalls)
-
-    ro_size = page_align(len(replay_table) + 8 * len(regs))
-    rx_size = PAGE_SIZE
-    rw_size = PAGE_SIZE
-    sv_size = ro_size + rx_size + rw_size + 4096
-
-    sv_pn = 0x10
-    for pn, content in pages.get_page_list():
-        if pn - sv_pn < sv_size // PAGE_SIZE:
-            sv_pn = pn + len(content) // PAGE_SIZE
-
-    far_addr = sv_pn * PAGE_SIZE
-    replay_table_addr = far_addr + rx_size
-    regs_addr = replay_table_addr + len(replay_table)
-    far_stack_base = replay_table_addr + ro_size
-    far_stack_top = far_stack_base + rw_size
-
-    # write near_calls
-    for syscall in syscalls:
-        addr = syscall[0]
-        if addr not in near_map:
-            continue
-        near_addr = near_map.pop(addr)
-        trap = make_jump(near_addr - addr)
-        near_call = make_near(addr + 4, near_addr, far_stack_base, far_addr)
-        pages.put(addr, trap, force=True)
-        pages.put(near_addr, near_call)
-
-    entry_call = make_near(entry_pc, entry_near_addr, far_stack_base)
-    pages.put(entry_near_addr, entry_call)
-    regs[0] = entry_near_addr.to_bytes(8, 'little')
-
-    # write supervisor
-    far_bin = make_far(far_stack_base + rw_size)
-    pages.put(far_addr, far_bin)
-    pages.put(replay_table_addr, replay_table)
-    pages.put(regs_addr, b''.join(regs))
-    pages.put(far_stack_base, regs[2])
-    pages.put(far_stack_top - 8, replay_table_addr.to_bytes(8, 'little'))
-
-    # dump pages and cfg
-    cfgs = []
-    with open('test.dump', 'wb') as f:
-        for i, (pn, content) in enumerate(pages.get_page_list()):
-            for c in content:
-                if c is None:
-                    f.write(b'\0')
-                else:
-                    f.write(c.to_bytes(1, 'little'))
-            cfgs.append((pn * PAGE_SIZE, i * PAGE_SIZE, PAGE_SIZE))
-    with open('test.cfg', 'w') as f:
-        f.write('%d\n' % len(cfgs))
-        for addr, offs, size in cfgs:
-            f.write('%x %x %x\n' % (addr, offs, size))
-        f.write('%x\n' % regs_addr)
