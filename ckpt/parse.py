@@ -1,5 +1,6 @@
 import os
 import io
+import copy
 import argparse
 import hashlib
 from subprocess import Popen, PIPE, DEVNULL
@@ -47,10 +48,13 @@ class MakeHelper:
 
     @staticmethod
     def near(ret_pc: int, near_pc: int, near_buf: int,
-             far_pc: int = None, norvc: bool = True) -> bytes:
+             far_pc: int = None, alter_rd: int = None,
+             norvc: bool = True) -> bytes:
         args = ['NEAR_BUF=0x%x' % near_buf]
         if far_pc is not None:
             args += ['FAR_CALL=0x%x' % far_pc]
+        if alter_rd is not None and alter_rd != 10:
+            args += ['ALTER_RD=x%d' % alter_rd]
         if norvc:
             args += ['NORVC=1']
         near = MakeHelper.make('near.bin', args)
@@ -283,15 +287,17 @@ class Checkpoint:
         self.pages = PageMap()
         self.path_prefix = None
 
-    def process_once(self, verbose=False):
+    def process_once(self, verbose=False, suffix='.1'):
         # reserve space for near_calls
         free_list = self.pages.make_free_list()
         near_map = {}  # base_addr: near_addr
 
-        size = len(MakeHelper.near(0, 0, 0, 0))
+        size1 = len(MakeHelper.near(0, 0, 0, 0))
+        size2 = len(MakeHelper.near(0, 0, 0, 0, 0))
         for syscall in self.syscalls:
             if syscall.addr in near_map:
                 continue
+            size = size1 if syscall.alter_rd is None else size2
             near_addr = self.pages.reserve(free_list, syscall.addr, size)
             near_map[syscall.addr] = near_addr
 
@@ -337,7 +343,8 @@ class Checkpoint:
             near_addr = near_map.pop(syscall.addr)
             trap = MakeHelper.jump(near_addr - syscall.addr)
             near_call = MakeHelper.near(
-                syscall.addr + 4, near_addr, near_buf, far_addr)
+                syscall.addr + 4, near_addr, near_buf, far_addr,
+                syscall.alter_rd)
             self.pages.put(syscall.addr, trap)
             self.pages.put(near_addr, near_call)
 
@@ -355,8 +362,8 @@ class Checkpoint:
                        replay_table_addr.to_bytes(8, 'little'))
 
         # dump pages and cfg
-        dumpfile = open(self.path_prefix + '.1.dump', 'wb')
-        cfgfile = open(self.path_prefix + '.1.cfg', 'w')
+        dumpfile = open(self.path_prefix + suffix + '.dump', 'wb')
+        cfgfile = open(self.path_prefix + suffix + '.cfg', 'w')
         self.pages.dump(dumpfile, cfgfile)
         dumpfile.close()
         cfgfile.write('%x\n' % regs_addr)
@@ -365,16 +372,24 @@ class Checkpoint:
     def process(self):
         # break with ecall or first-executed instruction
         if self.breakpoint is None:
+            print(self.path_prefix, 'once')
             self.process_once()
             return
 
         # break with a repeating instruction
+        print(self.path_prefix, 'first')
+        pages = copy.deepcopy(self.pages)
+        self.process_once(verbose=True)
+
         # run the checkpoint and trace the execution of
         # the breakpoint instruction
-        self.process_once(verbose=True)
-        cmd = ['rv-sim', '-M', hex(self.breakpoint.addr), 'cl', '']
-        p = Popen(cmd, bufsize=0, stdout=PIPE)
-        repeat = self.breakpoint.repeat
+        print(self.path_prefix, 'rerun')
+        addr, rd, repeat = self.breakpoint
+        cmd = ['rv-sim', '-M', hex(addr), '--',
+               os.path.join(SRC_DIR, 'cl'),
+               self.path_prefix + '.1.cfg',
+               self.path_prefix + '.1.dump']
+        p = Popen(cmd, bufsize=0, stdout=PIPE, encoding='utf-8')
         while True:
             line = p.stdout.readline()
             if not line:
@@ -390,15 +405,27 @@ class Checkpoint:
             if not line:
                 raise Exception('incomplete execution')
             if line.startswith('execute'):
-                _, val = line.split()
-                val = int(val, 16)
-                bp = SysCall(self.breakpoint.addr)
+                val = int(line.split()[1], 16)
                 repeat -= 1
-                if repeat == 0:
+                if repeat > 0:
+                    syscall = SysCall(addr, val, alter_rd=rd)
+                    syscalls.append(syscall)
+                else:
+                    syscall = SysCall(addr, is_break=True)
+                    syscalls.append(syscall)
                     p.kill()
                     break
             elif line.startswith('syscall'):
-                syscalls.append(next(syscall_iter))
+                val = int(line.split()[1], 16)
+                syscall = next(syscall_iter)
+                assert val == syscall.retval
+                syscalls.append(syscall)
+
+        # process again with the new syscall sequence
+        print(self.path_prefix, 'second')
+        self.syscalls = syscalls
+        self.pages = pages
+        self.process_once(suffix='.2')
 
     def make_replay_table(self):
         buf = []
@@ -464,6 +491,7 @@ def parse_log(path):
             if tokens[2] == 'repeat':
                 repeat = int(tokens[3])
                 rd = int(tokens[4])
+                assert rd != 0
                 cur.breakpoint = (addr, rd, repeat)
             else:
                 syscal = SysCall(addr, is_break=True)
