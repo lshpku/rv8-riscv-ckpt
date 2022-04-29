@@ -1,13 +1,15 @@
 import os
 import io
 import argparse
+import hashlib
 from subprocess import Popen, DEVNULL
 from typing import Union, List, Tuple
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
 
-basedir = os.path.dirname(__file__)
+SRC_DIR = os.path.dirname(__file__)
+WORK_DIR = os.getcwd()
 
 PAGE_OFFS = 12
 PAGE_SIZE = 1 << PAGE_OFFS
@@ -16,67 +18,51 @@ FIRST_PN = 0x10
 ECALL = '00000073'
 
 
-class chdir:
-    def __init__(self, path):
-        self.dpath = path
-        self.spath = os.getcwd()
+class MakeHelper:
 
-    def __enter__(self):
-        os.chdir(self.dpath)
+    @staticmethod
+    def make(target: str, args: List[str]) -> bytes:
+        sig = (target + '\t'.join(args)).encode('utf-8')
+        sig = hashlib.sha256(sig).hexdigest()[:8]
+        base, ext = os.path.splitext(target)
+        target = base + sig + ext
+        cmd = ['make', target] + args
 
-    def __exit__(self, type, value, traceback):
-        os.chdir(self.spath)
-
-
-def make_clean():
-    cmd = ['make', 'clean']
-    with chdir(basedir):
+        os.chdir(SRC_DIR)
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
             exit(p.returncode)
+        with open(target, 'rb') as f:
+            data = f.read()
+        os.remove(target)
+        os.chdir(WORK_DIR)
+        return data
 
+    @staticmethod
+    def jump(offset: int, norvc: bool = True):
+        args = ['OFFSET=%d' % offset]
+        if norvc:
+            args += ['NORVC=1']
+        return MakeHelper.make('jump.bin', args)
 
-def make_jump(offset):
-    make_clean()
-    cmd = ['make', 'jump.bin', 'OFFSET=%d' % offset, 'NORVC=1']
-    with chdir(basedir):
-        p = Popen(cmd, stdout=DEVNULL)
-        if p.wait():
-            exit(p.returncode)
-        with open('jump.bin', 'rb') as f:
-            return f.read()
+    @staticmethod
+    def near(ret_pc: int, near_pc: int, near_buf: int,
+             far_pc: int = None, norvc: bool = True) -> bytes:
+        args = ['NEAR_BUF=0x%x' % near_buf]
+        if far_pc is not None:
+            args += ['FAR_CALL=0x%x' % far_pc]
+        if norvc:
+            args += ['NORVC=1']
+        near = MakeHelper.make('near.bin', args)
+        ret = MakeHelper.jump(ret_pc - near_pc - len(near))
+        return near + ret
 
-
-def make_near(ret_pc: int, near_pc: int, near_buf: int,
-              far_pc: int = None, norvc: bool = True) -> bytes:
-    make_clean()
-    cmd = ['make', 'near.bin', 'NEAR_BUF=%d' % near_buf]
-    if far_pc is not None:
-        cmd += ['FAR_CALL=%d' % far_pc]
-    if norvc:
-        cmd += ['NORVC=1']
-    with chdir(basedir):
-        p = Popen(cmd, stdout=DEVNULL)
-        if p.wait():
-            exit(p.returncode)
-        with open('near.bin', 'rb') as f:
-            near = f.read()
-
-    ret_jump = make_jump(ret_pc - near_pc - len(near))
-    return near + ret_jump
-
-
-def make_far(far_stack_top: int, verbose: bool = True):
-    make_clean()
-    cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top]
-    if verbose:
-        cmd += ['VERBOSE=1']
-    with chdir(basedir):
-        p = Popen(cmd, stdout=DEVNULL)
-        if p.wait():
-            exit(p.returncode)
-        with open('far.bin', 'rb') as f:
-            return f.read()
+    @staticmethod
+    def far(far_stack_top: int, verbose: bool = True):
+        args = ['FAR_STACK_TOP=0x%x' % far_stack_top]
+        if verbose:
+            args += ['VERBOSE=1']
+        return MakeHelper.make('far.bin', args)
 
 
 class Page:
@@ -315,14 +301,14 @@ class Checkpoint:
         free_list = self.pages.make_free_list()
         near_map = {}  # base_addr: near_addr
 
-        size = len(make_near(0, 0, 0, 0))
+        size = len(MakeHelper.near(0, 0, 0, 0))
         for syscall in self.syscalls:
             if syscall.addr in near_map:
                 continue
             near_addr = self.pages.reserve(free_list, syscall.addr, size)
             near_map[syscall.addr] = near_addr
 
-        size = len(make_near(0, 0, 0))
+        size = len(MakeHelper.near(0, 0, 0))
         entry_addr = self.pages.reserve(free_list, self.entry_pc, size)
 
         # reserve pages for supervisor
@@ -362,18 +348,18 @@ class Checkpoint:
             if syscall.addr not in near_map:
                 continue
             near_addr = near_map.pop(syscall.addr)
-            trap = make_jump(near_addr - syscall.addr)
-            near_call = make_near(
+            trap = MakeHelper.jump(near_addr - syscall.addr)
+            near_call = MakeHelper.near(
                 syscall.addr + 4, near_addr, near_buf, far_addr)
             self.pages.put(syscall.addr, trap)
             self.pages.put(near_addr, near_call)
 
-        entry_call = make_near(self.entry_pc, entry_addr, near_buf)
+        entry_call = MakeHelper.near(self.entry_pc, entry_addr, near_buf)
         self.pages.put(entry_addr, entry_call)
         self.regs[0] = entry_addr.to_bytes(8, 'little')
 
         # write supervisor
-        far_call = make_far(far_stack_top)
+        far_call = MakeHelper.far(far_stack_top)
         self.pages.put(far_addr, far_call)
         self.pages.put(replay_table_addr, replay_table)
         self.pages.put(regs_addr, b''.join(self.regs))
@@ -388,7 +374,7 @@ class Checkpoint:
         dumpfile.close()
         cfgfile.write('%x\n' % regs_addr)
         cfgfile.close()
-        print('done')
+        print(' done')
 
     def make_replay_table(self):
         buf = []

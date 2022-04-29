@@ -43,3 +43,17 @@ far_call:
 	ld	sp, 32(sp)	# return address
 	jr	sp
 	.size	far_call, .-far_call
+
+	.global	raw_exit
+raw_exit:
+	li	a7, 93	# exit
+	ecall
+	unimp
+	.size	raw_exit, .-raw_exit
+
+	.global raw_write
+raw_write:
+	li	a7, 64	# write
+	ecall
+	ret
+	.size	raw_write, .-raw_write
