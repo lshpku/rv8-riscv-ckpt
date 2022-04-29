@@ -191,7 +191,7 @@ struct rv_emulator
 			{ "-V", "--checkpoint-period", cmdline_arg_type_string,
 				"Take checkpoints at this period of instructions",
 				[&](std::string s) { checkpoint_period = strtoull(s.c_str(), nullptr, 10); return true; } },
-			{ "-V", "--checkpoint-monitor", cmdline_arg_type_string,
+			{ "-M", "--checkpoint-monitor", cmdline_arg_type_string,
 				"Monitor every execution of the instruction at this pc",
 				[&](std::string s) { checkpoint_monitor = s; return true; } },
 			{ "-h", "--help", cmdline_arg_type_none,
