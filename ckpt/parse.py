@@ -66,9 +66,11 @@ def make_near(ret_pc: int, near_pc: int, near_buf: int,
     return near + ret_jump
 
 
-def make_far(far_stack_top):
+def make_far(far_stack_top: int, verbose: bool = True):
     make_clean()
-    cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top, 'VERBOSE=1']
+    cmd = ['make', 'far.bin', 'FAR_STACK_TOP=%d' % far_stack_top]
+    if verbose:
+        cmd += ['VERBOSE=1']
     with chdir(basedir):
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
@@ -172,11 +174,13 @@ class PageMap:
             if do_s:
                 if free_list[s][0] + size <= free_list[s][1]:
                     s_hit = True
-                s -= 1
+                else:
+                    s -= 1
             if do_e:
-                if free_list[e][0] + size >= free_list[e][1]:
+                if free_list[e][1] - size >= free_list[e][0]:
                     e_hit = True
-                e += 1
+                else:
+                    e += 1
 
         # select the nearest free range
         if s_hit and e_hit:
@@ -191,7 +195,7 @@ class PageMap:
         elif e_hit:
             use_i = e
         else:
-            raise Exception('failed to researve')
+            raise Exception('failed to reserve')
 
         # update free_list and page map
         begin, end = free_list[use_i]
@@ -266,7 +270,7 @@ class SysCall:
         buf = []
 
         if self.waddr is not None:
-            buf.append(self.addr.to_bytes(8, 'little'))
+            buf.append(self.waddr.to_bytes(8, 'little'))
 
             padded_size = (len(self.wdata) + 7) & ~7
             buf.append(padded_size.to_bytes(8, 'little'))
@@ -289,8 +293,8 @@ class Breakpoint(SysCall):
         self.repeat_rd = None
 
     def make_entry(self) -> bytes:
-        addr = (-1).to_bytes(8, 'little')
-        retval = self.retval.to_bytes(8, 'little')
+        addr = (-1).to_bytes(8, 'little', signed=True)
+        retval = (0).to_bytes(8, 'little')
         return addr + retval
 
 
@@ -305,7 +309,8 @@ class Checkpoint:
         self.path_prefix = None
 
     def process(self):
-        print('processing', self.path_prefix)
+        print('processing', self.path_prefix, end='', flush=True)
+
         # reserve space for near_calls
         free_list = self.pages.make_free_list()
         near_map = {}  # base_addr: near_addr
@@ -383,7 +388,7 @@ class Checkpoint:
         dumpfile.close()
         cfgfile.write('%x\n' % regs_addr)
         cfgfile.close()
-        print('done', self.path_prefix)
+        print('done')
 
     def make_replay_table(self):
         buf = []
@@ -447,9 +452,12 @@ def parse_log(path):
                 cur.syscalls.append(syscall)
 
         elif tokens[0] == 'break':
-            cur.breakpoint = Breakpoint(int(tokens[1], 16))
+            bp = Breakpoint(int(tokens[1], 16))
             if tokens[2] == 'repeat':
-                cur.breakpoint.repeat_rd = int(tokens[4])
+                bp.repeat_rd = int(tokens[4])
+                cur.breakpoint = bp
+            else:
+                cur.syscalls.append(bp)
 
         elif tokens[0] == 'file':
             path = os.path.join(dirname, tokens[1])
