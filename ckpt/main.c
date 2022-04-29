@@ -90,5 +90,6 @@ int main(int argc, char *argv[])
 
     // invoke cl (no return)
     printf("invoke cl\n");
+    fflush(stdout);
     ((cl_func)cl_p)(mc_p, mc_num, dump_f, pc);
 }
