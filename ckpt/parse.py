@@ -40,7 +40,7 @@ def make_clean():
 
 def make_jump(offset):
     make_clean()
-    cmd = ['make', 'jump.bin', 'OFFSET=%d' % offset]
+    cmd = ['make', 'jump.bin', 'OFFSET=%d' % offset, 'NORVC=1']
     with chdir(basedir):
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
@@ -53,9 +53,7 @@ def make_near(ret_pc: int, near_pc: int, near_buf: int,
               far_pc: int = None) -> bytes:
     make_clean()
     cmd = ['make', 'near.bin', 'NEAR_BUF=%d' % near_buf]
-    if far_pc is None:
-        cmd += ['RETURN_ONLY=1']
-    else:
+    if far_pc is not None:
         cmd += ['FAR_CALL=%d' % far_pc]
     with chdir(basedir):
         p = Popen(cmd, stdout=DEVNULL)
@@ -79,11 +77,11 @@ def make_far(far_stack_top):
             return f.read()
 
 
-class PageSet:
+class Page:
 
-    def __init__(self):
-        self.page_map = {}
-        self.free_list = []
+    def __init__(self, bitmap: bytes, data: bytes):
+        self.bitmap = int.from_bytes(bitmap, 'little')
+        self.data = bytearray(data)
 
     def put(self, addr: int, data: Union[int, str, bytes],
             force: bool = False) -> int:
@@ -154,106 +152,148 @@ class PageSet:
         return sorted(self.page_map.items())
 
 
-def parse_log(f):
-    regs = [None] * 64  # pc, 31 int, 32 fp
-    pages = PageSet()
-    syscalls = []  # [addr, retval, (addr, stream), ...]
+class SysCall:
 
-    insts = 0
-    expected_insts = 1000000
-    last_syscall_insts = 0
-    last_syscall_pages = PageSet()
+    def __init__(self):
+        self.addr = None
+        self.retval = None
+        self.waddr = None
+        self.wdata = None
+
+    def set_wdata(self, wdata: str):
+        assert len(wdata) % 2 == 0
+        wbuf = bytearray()
+        for i in range(0, len(wdata), 2):
+            wbuf.append(int(wdata[i:i + 2], 16))
+        self.wdata = bytes(wbuf)
+
+    def make_entry(self) -> bytes:
+        '''
+        Replay table entry types:
+            VALID: copy data
+            RET  : return from syscall
+            EXIT : handle exit
+        '''
+        buf = []
+
+        if self.waddr is not None:
+            buf.append(self.addr.to_bytes(8, 'little'))
+
+            padded_size = (len(self.wdata) + 7) & ~7
+            buf.append(padded_size.to_bytes(8, 'little'))
+
+            padding_size = padded_size - len(self.wdata)
+            buf.append(self.wdata)
+            buf.append(b'\0' * padding_size)
+
+        buf.append(b'\0' * 8)
+        buf.append(self.retval.to_bytes(8, 'little'))
+
+        return b''.join(buf)
+
+
+class Breakpoint(SysCall):
+
+    def __init__(self, addr: int):
+        super().__init__()
+        self.addr = addr
+        self.repeat_rd = None
+
+    def make_entry(self) -> bytes:
+        addr = (-1).to_bytes(8, 'little')
+        retval = self.retval.to_bytes(8, 'little')
+        return addr + retval
+
+
+class Checkpoint:
+
+    def __init__(self):
+        self.begin = None
+        self.regs = []  # pc, 31 int, 32 fp
+        self.syscalls = []
+        self.breakpoint = None
+        self.page_map = {}  # pn: Page
+
+    def process(self):
+        pass
+
+
+def parse_log(path):
+    '''
+    Log types:
+        begin <addr>
+        ireg <val0> ... <val31>
+        freg <val0> ... <val31>
+        syscall <addr> <retval> [<waddr> <wdata>]
+        syscall <addr> <retval> exit
+        break <addr> {ecall|first|firstrvc}
+        break <addr> repeat <times> <rd>
+        file <path>
+        dump <pn>
+    '''
+    f = open(path)
+    dirname = os.path.dirname(path)
+    cur = None
+    dumpfile = None
 
     while True:
         line = f.readline()
         if not line:
             break
-        line = line.strip()
-        if not line:
-            continue
-
         tokens = line.split()
-        if tokens[1] != '=':
-            addr = int(tokens[1], 16)
 
-        if tokens[0] == 'fetch':
-            value = tokens[3]
-            if regs[0] is None:
-                regs[0] = addr.to_bytes(8, 'little')
-            if value == ECALL:
-                syscalls.append([addr])
-                last_syscall_pages = PageSet()
-                last_syscall_insts = insts
-            n = pages.put(addr, value)
-            new_since_begin = (n == len(value) // 2)
-            n = last_syscall_pages.put(addr, value)
-            new_since_last_syscall = (n == len(value) // 2)
-            insts += 1
-            if insts >= expected_insts:
-                if new_since_last_syscall:
-                    if syscalls:
-                        print('last syscall %d: 0x%x' % (last_syscall_insts, syscalls[-1][0]))
-                    print('find new inst %d: %s at 0x%x' % (insts, value, addr))
-                    if new_since_begin:
-                        print('new since begin')
-                    break
-                elif value == ECALL:
-                    print('first syscall %d: 0x%x' % (insts, addr))
-                    break
+        if tokens[0] == 'begin':
+            if cur is not None:
+                cur.process()
+            if dumpfile is not None:
+                dumpfile.close()
+                dumpfile = None
+            cur = Checkpoint()
+            cur.begin = int(tokens[1], 16)
 
-        elif tokens[0] == 'load':
-            pages.put(addr, tokens[3])
-        elif tokens[0] == 'store':
-            pages.put(addr, len(tokens[3]) // 2)
-        elif tokens[0] == 'amo':
-            pages.put(addr, tokens[3])
+        elif tokens[0] in {'ireg', 'freg'}:
+            for val in tokens[1:]:
+                cur.regs.append(int(val, 16))
 
         elif tokens[0] == 'syscall':
-            if tokens[2].startswith('0x'):
-                syscalls[-1].append(int(tokens[2], 16))
+            addr = int(tokens[1], 16)
+            if len(tokens) > 3 and tokens[3] == 'exit':
+                cur.breakpoint = Breakpoint(addr)
             else:
-                syscalls[-1].append(int(tokens[2]))
-        elif tokens[0] == 'syswrite':
-            value = []
-            for i, b in enumerate(tokens[3:]):
-                pages.put(addr + i, 1)
-                value.append(int(b, 16).to_bytes(1, 'little'))
-            syscalls[-1].append((addr, b''.join(value)))
+                syscall = SysCall()
+                syscall.addr = addr
+                syscall.retval = int(tokens[2], 16)
+                if len(tokens) > 3:
+                    syscall.waddr = int(tokens[3], 16)
+                    syscall.set_wdata(tokens[4])
+                cur.syscalls.append(syscall)
 
-        elif tokens[0] == 'ireg':
-            for i in range(1, 32):
-                regs[i] = int(tokens[i + 2], 16).to_bytes(8, 'little')
-        elif tokens[0] == 'freg':
-            for i in range(32):
-                regs[i + 32] = int(tokens[i + 2], 16).to_bytes(8, 'little')
-        else:
-            raise ValueError('unknown type: %s' % tokens[0])
+        elif tokens[0] == 'break':
+            cur.breakpoint = Breakpoint(int(tokens[1], 16))
+            if tokens[2] == 'repeat':
+                cur.breakpoint.repeat_rd = int(tokens[4])
 
-    return regs, pages, syscalls
+        elif tokens[0] == 'file':
+            path = os.path.join(dirname, tokens[1])
+            dumpfile = open(path, 'rb')
+        elif tokens[0] == 'dump':
+            bitmap = dumpfile.read(PAGE_SIZE // 8)
+            data = dumpfile.read(PAGE_SIZE)
+            pn = int(tokens[1], 16)
+            cur.page_map[pn] = Page(bitmap, data)
 
-
-def make_replay_table(syscalls):
-    replay_table = []
-    for syscall in syscalls:
-        retval = syscall[1]
-        for waddr, value in syscall[2:]:
-            if not value:
-                continue
-            replay_table.append(waddr.to_bytes(8, 'little'))
-            if len(value) % 8 != 0:
-                value += b'\0' * (8 - (len(value) % 8))
-            replay_table.append(len(value).to_bytes(8, 'little'))
-            replay_table.append(value)
-        replay_table.append(b'\0' * 8)
-        replay_table.append(retval.to_bytes(8, 'little'))
-    return b''.join(replay_table)
+    if cur is not None:
+        cur.process()
+    if dumpfile is not None:
+        dumpfile.close()
+    f.close()
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
 
-    with open(args.path) as f:
-        regs, pages, syscalls = parse_log(f)
+    parse_log(args.path)
+    exit()
 
     # reserve places for near_calls
     make_clean()
