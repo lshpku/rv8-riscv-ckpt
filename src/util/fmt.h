@@ -374,6 +374,7 @@ namespace riscv {
 		void execute(P &proc, T &dec, uint64_t addr) {
 			if (addr == monitor_pc) {
 				printf("execute %lx\n", (uint64_t)proc.ireg[dec.rd]);
+				fflush(stdout);
 			}
 		}
 

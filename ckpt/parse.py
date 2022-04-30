@@ -372,24 +372,25 @@ class Checkpoint:
     def process(self):
         # break with ecall or first-executed instruction
         if self.breakpoint is None:
-            print(self.path_prefix, 'once')
+            print(self.path_prefix, 'single pass')
             self.process_once()
+            print(self.path_prefix, 'done')
             return
 
         # break with a repeating instruction
-        print(self.path_prefix, 'first')
+        print(self.path_prefix, 'first pass')
         pages = copy.deepcopy(self.pages)
         self.process_once(verbose=True)
 
         # run the checkpoint and trace the execution of
         # the breakpoint instruction
-        print(self.path_prefix, 'rerun')
+        print(self.path_prefix, 'rerunning')
         addr, rd, repeat = self.breakpoint
         cmd = ['rv-sim', '-M', hex(addr), '--',
                os.path.join(SRC_DIR, 'cl'),
                self.path_prefix + '.1.cfg',
                self.path_prefix + '.1.dump']
-        p = Popen(cmd, bufsize=0, stdout=PIPE, encoding='utf-8')
+        p = Popen(cmd, bufsize=8, stdout=PIPE, encoding='utf-8')
         while True:
             line = p.stdout.readline()
             if not line:
@@ -422,10 +423,11 @@ class Checkpoint:
                 syscalls.append(syscall)
 
         # process again with the new syscall sequence
-        print(self.path_prefix, 'second')
+        print(self.path_prefix, 'second pass')
         self.syscalls = syscalls
         self.pages = pages
         self.process_once(suffix='.2')
+        print(self.path_prefix, 'done')
 
     def make_replay_table(self):
         buf = []
