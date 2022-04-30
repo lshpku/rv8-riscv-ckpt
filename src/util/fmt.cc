@@ -634,16 +634,30 @@ void CheckpointManager::break_here(uint64_t instret)
 	sprintf(filename, "checkpoint_%lu_%lu.dump", begin_instret, instret);
 	std::string filepath = dirname + ("/" + filename);
 
+	// dump memory
 	FILE *dump_file = fopen(filepath.c_str(), "wb");
 	if (!dump_file) {
 		fprintf(stderr, "%s: %s\n", filepath.c_str(), strerror(errno));
 		::exit(-1);
 	}
 	fprintf(out, "file %s\n", filename.c_str());
-
 	mem->dump(dump_file, out);
-
 	fclose(dump_file);
+
+	// dump store trace
+	for (int i = 0; i < mem->STREC_SIZE; i++) {
+		if (mem->stores[i].addr) {
+			uint64_t data;
+			switch (mem->stores[i].size) {
+				case 1: data = *( uint8_t *)mem->stores[i].addr; break;
+				case 2: data = *(uint16_t *)mem->stores[i].addr; break;
+				case 4: data = *(uint32_t *)mem->stores[i].addr; break;
+				case 8: data = *(uint64_t *)mem->stores[i].addr; break;
+			}
+			fprintf(out, "store 0x%lx %0*lx\n", mem->stores[i].addr,
+				(int)(mem->stores[i].size * 2), data);
+		}
+	}
 	delete mem;
 	mem = NULL;
 }

@@ -200,9 +200,18 @@ namespace riscv {
 		ExecRec() { memset(this, 0, sizeof(ExecRec)); }
 	};
 
+	struct StoreRec {
+		uint64_t addr;
+		unsigned size;
+
+		StoreRec() { memset(this, 0, sizeof(StoreRec)); }
+	};
+
 	struct MemTrace {
 		std::unordered_map<uint64_t, PageRec *> pages;
 		std::unordered_map<uint64_t, ExecRec *> execs;
+		enum { STREC_SIZE = 256 };
+		StoreRec stores[STREC_SIZE];
 
 		PageRec* get_page(uint64_t pn) {
 			PageRec *&page = pages[pn];
@@ -275,6 +284,15 @@ namespace riscv {
 		template <typename T>
 		void store(uint64_t addr, T data) {
 			load(addr, (T)0);
+
+			int hash = 0;
+			uint64_t shift = addr;
+			for (unsigned i = 0; i < sizeof(addr); i++) {
+				hash ^= shift & (STREC_SIZE - 1);
+				shift /= STREC_SIZE;
+			}
+			stores[hash].addr = addr;
+			stores[hash].size = sizeof(T);
 		}
 
 		void dump(FILE *dump_file, FILE *cfg_file);
@@ -386,7 +404,11 @@ namespace riscv {
 		}
 
 		template <typename T>
-		void store(uint64_t addr, T data) { load(addr, data); }
+		void store(uint64_t addr, T data) {
+			if (mem) {
+				mem->store(addr, data);
+			}
+		}
 
 		void syscall(uint64_t retval) { syscall(retval, NULL, 0); }
 		void syscall(uint64_t retval, void *addr, size_t size);
