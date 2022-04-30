@@ -18,6 +18,7 @@ PAGE_SIZE = 1 << PAGE_OFFS
 PAGE_OFFS_MASK = PAGE_SIZE - 1
 FIRST_PN = 0x10
 ECALL = '00000073'
+J_MAX_OFFS = 1 << 20
 
 
 class MakeHelper:
@@ -45,6 +46,7 @@ class MakeHelper:
 
     @staticmethod
     def jump(offset: int, norvc: bool = True):
+        assert offset < J_MAX_OFFS and offset >= -J_MAX_OFFS
         args = ['OFFSET=%d' % offset]
         if norvc:
             args += ['NORVC=1']
@@ -294,6 +296,10 @@ class Checkpoint:
 
     def process_once(self, verbose=False, suffix='.1'):
         # reserve space for near_calls
+        for syscall in self.syscalls:
+            # set all 4 bytes in case the latter 2 bytes of
+            # an rvc instruction are considered free
+            self.pages.put(syscall.addr, b'\0' * 4)
         free_list = self.pages.make_free_list()
         near_map = {}  # base_addr: near_addr
 
