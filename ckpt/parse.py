@@ -286,6 +286,7 @@ class Checkpoint:
         self.breakpoint = None  # (pc, rd, repeat)
         self.pages = PageMap()
         self.path_prefix = None
+        self.stores = []  # (addr, size, data)
 
     def process_once(self, verbose=False, suffix='.1'):
         # reserve space for near_calls
@@ -431,8 +432,21 @@ class Checkpoint:
 
     def make_replay_table(self):
         buf = []
+
+        # syscalls
+        # breakpoint is automatically encoded
         for syscall in self.syscalls:
             buf.append(syscall.make_entry())
+
+        # store assertions
+        for addr, size, data in self.stores:
+            addr = addr.to_bytes(8, 'little')
+            size = size.to_bytes(8, 'little')
+            data = data.to_bytes(8, 'little')
+            buf.append(addr + size + data)
+        buf.append((0).to_bytes(8, 'little'))
+        buf.append((0).to_bytes(8, 'little'))
+
         return b''.join(buf)
 
 
@@ -498,6 +512,12 @@ def parse_log(path):
             else:
                 syscal = SysCall(addr, is_break=True)
                 cur.syscalls.append(syscal)
+
+        elif tokens[0] == 'store':
+            addr = int(tokens[1], 16)
+            size = len(tokens[2]) // 2
+            data = int(tokens[2], 16)
+            cur.stores.append((addr, size, data))
 
         elif tokens[0] == 'file':
             path = os.path.join(dirname, tokens[1])
