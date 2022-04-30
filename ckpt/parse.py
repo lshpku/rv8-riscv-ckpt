@@ -8,6 +8,7 @@ from typing import Union, List, Tuple
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
+parser.add_argument('-j', '--jobs', type=int, default=1)
 
 SRC_DIR = os.path.dirname(__file__)
 WORK_DIR = os.getcwd()
@@ -20,16 +21,19 @@ ECALL = '00000073'
 
 
 class MakeHelper:
+    identifier = b''
 
     @staticmethod
     def make(target: str, args: List[str]) -> bytes:
+        # make output name unique
         sig = (target + '\t'.join(args)).encode('utf-8')
+        sig += MakeHelper.identifier
         sig = hashlib.sha256(sig).hexdigest()[:8]
         base, ext = os.path.splitext(target)
         target = base + sig + ext
-        cmd = ['make', target] + args
 
         os.chdir(SRC_DIR)
+        cmd = ['make', target] + args
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
             exit(p.returncode)
@@ -467,22 +471,46 @@ def parse_log(path):
     dirname = os.path.dirname(path)
     cur = None
     dumpfile = None
+    children = set()  # pid
 
-    def flush():
-        if cur is not None:
-            # close dumpfile first as process() will overwrite it
-            dumpfile.close()
+    def submit_task():
+        if cur is None:
+            return
+        dumpfile.close()  # close it as soon as possible
+
+        # no multiprocessing
+        if args.jobs < 2:
             cur.process()
+            return
+
+        # block main if parallel jobs reach limitation
+        if len(children) == args.jobs:
+            pid, status = os.wait()
+            if status:
+                while children:
+                    children.remove(os.wait()[0])
+                exit(-1)
+            children.remove(pid)
+
+        # do fork
+        pid = os.fork()
+        if pid != 0:
+            children.add(pid)
+            return
+        f.close()
+        MakeHelper.identifier = os.getpid().to_bytes(4, 'little')
+        cur.process()
+        exit(0)
 
     while True:
         line = f.readline()
         if not line:
-            flush()
+            submit_task()
             break
         tokens = line.split()
 
         if tokens[0] == 'begin':
-            flush()
+            submit_task()
             cur = Checkpoint()
             cur.entry_pc = int(tokens[1], 16)
 
@@ -530,9 +558,18 @@ def parse_log(path):
             cur.pages[pn] = Page(bitmap, data)
 
     f.close()
+    while children:
+        pid, status = os.wait()
+        children.remove(pid)
+        if status:
+            while children:
+                children.remove(os.wait()[0])
+            exit(-1)
 
 
 if __name__ == '__main__':
     args = parser.parse_args()
-
-    parse_log(args.path)
+    try:
+        parse_log(args.path)
+    except KeyboardInterrupt:
+        pass
