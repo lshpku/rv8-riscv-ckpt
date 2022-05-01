@@ -7,3 +7,6 @@
 [submodule "meta"]
 	path = meta
 	url = https://github.com/michaeljclark/riscv-meta.git
+[submodule "ckpt/FastLZ"]
+	path = ckpt/FastLZ
+	url = https://github.com/ariya/FastLZ.git
