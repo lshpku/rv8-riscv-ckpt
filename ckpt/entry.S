@@ -10,35 +10,18 @@
 #   a2: fd of the memory dump file
 #   a3: pointer to the register file array
 ##
-
 	.text
-	.global	cl_begin, cl_end
-cl_begin:
-	mv	t2, a2
-	mv	sp, a3
-	li	t3, -1
-
+	.global	cl_entry
+cl_entry:
 	# map pages
-	beqz	a1, .end
-	mv	t0, a0
-	slli	t1, a1, 5
-	add	t1, t1, t0
-.loop:
-	ld	a0, 0(t0)	# addr
-	ld	a1, 16(t0)	# size
-	lwu	a2, 24(t0)	# prot
-	lwu	a3, 28(t0)	# flags
-	mv	a4, t2	# fd
-	ld	a5, 8(t0)	# offset
-	li	a7, 222	# mmap
-	ecall
-	beq	a0, t3, .fail
-	addi	t0, t0, 32
-	bltu	t0, t1, .loop
-.end:
-	mv	a0, t2	# fd
+	addi	sp, sp, -16
+	sd	a2, 0(sp)
+	sd	a3, 8(sp)
+	call	map_pages
+	ld	a0, 0(sp)	# fd
 	li	a7, 57	# close
 	ecall
+	ld	sp, 8(sp)
 
 	# restore register file
 	# 30 int regs except x0 and x2 (sp)
@@ -109,10 +92,11 @@ cl_begin:
 	# goto entrypoint
 	ld	sp, 0(sp)
 	jr	sp
+	.size	cl_entry, .-cl_entry
 
-.fail:
-	li	a0, -1
-	li	a7, 93	# exit
-	ecall
-	unimp
-cl_end:
+#include "raw-syscall.h"
+	RAW_LSEEK
+	RAW_READ
+	RAW_WRITE
+	RAW_EXIT
+	RAW_MMAP
