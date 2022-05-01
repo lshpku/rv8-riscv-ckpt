@@ -1,10 +1,13 @@
 #include "cl.h"
-#include "raw-syscall-cdef.h"
+#include "raw-syscall.h"
 #include "FastLZ/fastlz.h"
 
-#define PANIC(msg)                       \
-    raw_write(2, msg "\n", sizeof(msg)); \
-    raw_exit(-1);
+#define LOG(fd, msg) \
+    raw_write(fd, msg "\n", sizeof(msg))
+
+#define PANIC(msg) \
+    LOG(2, msg); \
+    raw_exit(-1)
 
 void map_pages(void *mc_p, int mc_num, int md_fd)
 {
@@ -41,4 +44,7 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
             }
         }
     }
+
+    raw_close(md_fd);
+    LOG(1, "begin execution");
 }

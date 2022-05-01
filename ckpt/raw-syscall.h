@@ -1,18 +1,19 @@
 #ifndef __RAW_SYSCALL_H__
 #define __RAW_SYSCALL_H__
+#include <unistd.h>
+#include <sys/mman.h>
 
-#define RAW_SYSCALL(name, number, end) \
-    .global name;                      \
-name:                                  \
-    li a7, number;                     \
-    ecall;                             \
-    end;                               \
-    .size name, .-name;
+int raw_close(int fd);
 
-#define RAW_LSEEK RAW_SYSCALL(raw_lseek,  62, ret)
-#define RAW_READ  RAW_SYSCALL(raw_read,   63, ret)
-#define RAW_WRITE RAW_SYSCALL(raw_write,  64, ret)
-#define RAW_EXIT  RAW_SYSCALL(raw_exit,   93, unimp)
-#define RAW_MMAP  RAW_SYSCALL(raw_mmap,  222, ret)
+off_t raw_lseek(int fd, off_t offset, int whence);
+
+ssize_t raw_read(int fd, void *buf, size_t count);
+
+ssize_t raw_write(int fd, const void *buf, size_t count);
+
+void *raw_mmap(void *addr, size_t length, int prot, int flags,
+               int fd, off_t offset);
+
+void raw_exit(int status) __attribute__((noreturn));
 
 #endif

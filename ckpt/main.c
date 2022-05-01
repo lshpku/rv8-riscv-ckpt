@@ -33,9 +33,9 @@ int main(int argc, char *argv[])
 
     // map cl text
     size_t cl_size = cl_end - cl_begin;
-    size_t cl_alloc_size = ALIGN_PAGE(cl_size);
+    size_t cl_map_size = ALIGN_PAGE(cl_size);
     void *cl_p = (void *)CL_BASE;
-    cl_p = mmap(cl_p, cl_alloc_size, PROT_EXEC | PROT_READ | PROT_WRITE,
+    cl_p = mmap(cl_p, cl_map_size, PROT_EXEC | PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     if (cl_p == MAP_FAILED) {
         fprintf(stderr, "cannot map cl: %s\n", strerror(errno));
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
     }
     memcpy(cl_p, cl_begin, cl_size);
     asm volatile("fence.i");
-    printf("map cl to %p-%p\n", cl_p, cl_p + cl_alloc_size);
+    printf("map cl to %p-%p\n", cl_p, cl_p + cl_map_size - 1);
 
     // map cl data (including stack)
     int mc_num;
@@ -52,15 +52,15 @@ int main(int argc, char *argv[])
         return -1;
     }
     size_t mc_size = mc_num * sizeof(mmap_cfg);
-    size_t mc_alloc_size = ALIGN_PAGE(mc_size + CL_STACK_SIZE);
-    void *mc_p = (void *)CL_BASE;
-    mc_p = mmap(mc_p, mc_alloc_size, PROT_READ | PROT_WRITE,
+    size_t mc_map_size = ALIGN_PAGE(mc_size + CL_STACK_SIZE);
+    void *mc_p = cl_p + cl_map_size;
+    mc_p = mmap(mc_p, mc_map_size, PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
     if (mc_p == MAP_FAILED) {
         fprintf(stderr, "cannot map mc: %s\n", strerror(errno));
         return -1;
     }
-    printf("map mc to %p-%p\n", mc_p, mc_p + mc_alloc_size);
+    printf("map mc to %p-%p\n", mc_p, mc_p + mc_map_size - 1);
 
     // parse mmap_cfgs
     for (int i = 0; i < mc_num; i++) {
@@ -85,5 +85,5 @@ int main(int argc, char *argv[])
     printf("invoke cl\n");
     fflush(stdout);
     cl_proxy_entry(mc_p, mc_num, dump_f, pc,
-                   cl_p, mc_p + mc_alloc_size);
+                   cl_p, mc_p + mc_map_size);
 }

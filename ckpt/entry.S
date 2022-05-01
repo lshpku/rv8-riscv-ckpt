@@ -18,9 +18,6 @@ cl_entry:
 	sd	a2, 0(sp)
 	sd	a3, 8(sp)
 	call	map_pages
-	ld	a0, 0(sp)	# fd
-	li	a7, 57	# close
-	ecall
 	ld	sp, 8(sp)
 
 	# restore register file
@@ -94,7 +91,8 @@ cl_entry:
 	jr	sp
 	.size	cl_entry, .-cl_entry
 
-#include "raw-syscall.h"
+#include "raw-syscall-impl.h"
+	RAW_CLOSE
 	RAW_LSEEK
 	RAW_READ
 	RAW_WRITE
