@@ -1,8 +1,13 @@
+#define HEAD_SIZE 8
+#define CSRV_SIZE 16
+#define CALLER_SAVE_SIZE 128
+#define HEAD_OFFSET (CSRV_SIZE+CALLER_SAVE_SIZE)
+#define STACK_SIZE (HEAD_OFFSET+HEAD_SIZE)
+
 	.text
 	.global	far_call
 far_call:
-	la	sp, FAR_STACK_TOP
-	addi	sp, sp, -136
+	la	sp, FAR_STACK_TOP-STACK_SIZE
 	sd	ra, 0(sp)
 	sd	t0, 8(sp)
 	sd	t1, 16(sp)
@@ -20,9 +25,10 @@ far_call:
 	sd	t5, 112(sp)
 	sd	t6, 120(sp)
 
-	ld	a0, 128(sp)	# current table offset
-	jal	ra, replay
-	sd	a0, 128(sp)	# next table offset
+	ld	a0, HEAD_OFFSET(sp)	# current table offset
+	addi	a1, sp, CALLER_SAVE_SIZE	# csr vector address
+	call	replay
+	sd	a0, HEAD_OFFSET(sp)	# next table offset
 	ld	a0, -8(a0)	# return value
 
 	ld	ra, 0(sp)

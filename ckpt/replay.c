@@ -1,65 +1,14 @@
-#include <stdint.h>
-#include <stddef.h>
-
-#define REPLAY_RET 0
-#define REPLAY_EXIT -1
-
-#define MSG_SUCCESS "finish\n"
-#define MSG_ST_FAIL "store assertion failed\n"
-
-typedef struct {
-    uint64_t addr;
-    uint64_t size;
-    char data[0];
-} replay_cfg;
-
-void raw_exit(int status) __attribute__((noreturn));
-void raw_write(int fd, const void *buf, size_t count);
-
-void do_exit(replay_cfg *head) __attribute__((noreturn));
-
-replay_cfg *replay(replay_cfg *head)
-{
-    while (head->addr != REPLAY_RET) {
-        // handle exit
-        if (head->addr == REPLAY_EXIT) {
-            do_exit(head + 1);
-        }
-
-        // handle copy
-        size_t size = head->size;
-        char *src = head->data;
-        char *dst = (void *)head->addr;
-        while (size--)
-            *(dst++) = *(src++);
-        head = (void *)(head + 1) + ((head->size + 7) & ~7);
-    }
-
-#ifdef VERBOSE
-    char msg[] = "syscall 0000000000000000\n";
-    uint64_t rc = head->size;
-    for (int i = 0; i < 16; i++) {
-        int b = rc & 0xf;
-        char c = b < 10 ? '0' + b : 'a' + b - 10;
-        msg[sizeof(msg) - 3 - i] = c;
-        rc >>= 4;
-    }
-    raw_write(1, msg, sizeof(msg) - 1);
-#endif
-
-    // return with the address of next entry
-    return head + 1;
-}
+#include "replay.h"
+#include "raw-syscall.h"
 
 #define COMPARE_WIDTH(w)                        \
     if (*(w *)head->addr != *(w *)head->data) { \
-        goto fail;                              \
+        return NULL;                            \
     }                                           \
     break
 
-void do_exit(replay_cfg *head)
+static replay_cfg *check_stores(replay_cfg *head)
 {
-    // check memory
     while (head->addr != REPLAY_RET) {
         switch (head->size) {
         case 1:
@@ -73,11 +22,60 @@ void do_exit(replay_cfg *head)
         }
         head = (void *)(head + 1) + 8;
     }
+    return head;
+}
 
-    raw_write(1, MSG_SUCCESS, sizeof(MSG_SUCCESS) - 1);
-    raw_exit(0);
+static void fast_memcpy(char *dest, const char *src, size_t n)
+{
+    do {
+        *dest++ = *src++;
+    } while (--n);
+}
 
-fail:
-    raw_write(1, MSG_ST_FAIL, sizeof(MSG_ST_FAIL) - 1);
-    raw_exit(-1);
+static void raw_log_u64(uint64_t value)
+{
+    char buf[17];
+    uint64_t r = value;
+    for (int i = 0; i < sizeof(buf) - 1; i++) {
+        int b = r & 0xf;
+        char c = b < 10 ? '0' + b : 'a' + b - 10;
+        buf[sizeof(buf) - 2 - i] = c;
+        r >>= 4;
+    }
+    buf[sizeof(buf) - 1] = '\n';
+    raw_write(1, buf, sizeof(buf));
+}
+
+replay_cfg *replay(replay_cfg *head, uint64_t *csrv)
+{
+    while (head->addr != REPLAY_RET) {
+        if (head->addr == REPLAY_EXIT) {
+            if (!(head = check_stores(head + 1))) {
+                RAW_PANIC("store assertion failed");
+            }
+			uint64_t cycle = __csrr_cycle();
+			uint64_t instret = __csrr_instret();
+            RAW_LOG("finish");
+			RAW_PRINT("cycle ");
+			raw_log_u64(cycle - csrv[0]);
+			RAW_PRINT("instret ");
+			raw_log_u64(instret - csrv[1]);
+            raw_exit(0);
+        }
+        if (head->addr == REPLAY_STAT) {
+            csrv[0] = __csrr_cycle();
+            csrv[1] = __csrr_instret();
+        } else {
+            fast_memcpy((void *)head->addr, head->data, head->size);
+        }
+        head = (void *)(head + 1) + ((head->size + 7) & ~7);
+    }
+
+#ifdef VERBOSE
+	RAW_PRINT("syscall ");
+    raw_log_u64(head->size);
+#endif
+
+    // return with the address of next entry
+    return head + 1;
 }

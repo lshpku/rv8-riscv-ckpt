@@ -16,4 +16,18 @@ void *raw_mmap(void *addr, size_t length, int prot, int flags,
 
 void raw_exit(int status) __attribute__((noreturn));
 
+#define RAW_FPRINT(fd, msg)                    \
+    do {                                       \
+        const char buf[sizeof(msg) - 1] = msg; \
+        raw_write(fd, buf, sizeof(buf));       \
+    } while (0)
+
+#define RAW_PRINT(msg) RAW_FPRINT(1, msg)
+
+#define RAW_LOG(msg) RAW_PRINT(msg "\n")
+
+#define RAW_PANIC(msg)       \
+    RAW_FPRINT(2, msg "\n"); \
+    raw_exit(-1)
+
 #endif
