@@ -233,7 +233,7 @@ class PageMap:
         for pn, count in cfgs:
             addr = pn * PAGE_SIZE
             size = count * PAGE_SIZE
-            cfgfile.write('%x\t%x\t%x\n' % (addr, offs, size))
+            cfgfile.write('%x\t%x\t%x\t%x\n' % (addr, offs, size, size))
             offs += size
 
         # write pages
@@ -265,10 +265,8 @@ class SysCall:
 
         if self.waddr is not None:
             buf.append(self.waddr.to_bytes(8, 'little'))
-
+            buf.append(len(self.wdata).to_bytes(8, 'little'))
             padded_size = (len(self.wdata) + 7) & ~7
-            buf.append(padded_size.to_bytes(8, 'little'))
-
             padding_size = padded_size - len(self.wdata)
             buf.append(self.wdata)
             buf.append(b'\0' * padding_size)
@@ -277,7 +275,7 @@ class SysCall:
             buf.append((0).to_bytes(8, 'little'))
             buf.append(self.retval.to_bytes(8, 'little'))
         else:
-            buf.append((-1).to_bytes(8, 'little', signed=True))
+            buf.append((1).to_bytes(8, 'little'))
             buf.append((0).to_bytes(8, 'little'))
 
         return b''.join(buf)
@@ -410,8 +408,8 @@ class Checkpoint:
                 break
 
         # insert execution into the syscall sequence
-        syscall_iter = iter(self.syscalls)
-        syscalls = []
+        syscall_queue = list(reversed(self.syscalls))
+        new_syscalls = []
         while True:
             line = p.stdout.readline()
             if not line:
@@ -421,21 +419,22 @@ class Checkpoint:
                 repeat -= 1
                 if repeat > 0:
                     syscall = SysCall(addr, val, alter_rd=rd)
-                    syscalls.append(syscall)
+                    new_syscalls.append(syscall)
                 else:
                     syscall = SysCall(addr, is_break=True)
-                    syscalls.append(syscall)
+                    new_syscalls.append(syscall)
                     p.kill()
                     break
             elif line.startswith('syscall'):
                 val = int(line.split()[1], 16)
-                syscall = next(syscall_iter)
+                syscall = syscall_queue.pop()
                 assert val == syscall.retval
-                syscalls.append(syscall)
+                new_syscalls.append(syscall)
+        assert not syscall_queue
 
         # process again with the new syscall sequence
         print(self.path_prefix, 'second pass')
-        self.syscalls = syscalls
+        self.syscalls = new_syscalls
         self.pages = pages
         self.process_once(suffix='.2')
         print(self.path_prefix, 'done')

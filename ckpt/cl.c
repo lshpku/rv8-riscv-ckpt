@@ -2,13 +2,6 @@
 #include "raw-syscall.h"
 #include "FastLZ/fastlz.h"
 
-#define LOG(fd, msg) \
-    raw_write(fd, msg "\n", sizeof(msg))
-
-#define PANIC(msg) \
-    LOG(2, msg); \
-    raw_exit(-1)
-
 void map_pages(void *mc_p, int mc_num, int md_fd)
 {
     char buf[CL_BUF_SIZE];
@@ -22,7 +15,7 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
                             MAP_PRIVATE | MAP_FIXED,
                             md_fd, mc_i->offset);
             if ((long)addr < 0) {
-                PANIC("mmap file failed");
+                RAW_PANIC("mmap file failed");
             }
         } else {
             void *addr = (void *)mc_i->addr;
@@ -31,20 +24,20 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
                             MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
                             -1, 0);
             if ((long)addr < 0) {
-                PANIC("mmap anonymous failed");
+                RAW_PANIC("mmap anonymous failed");
             }
             if (raw_lseek(md_fd, mc_i->offset, SEEK_SET) < 0) {
-                PANIC("lseek failed");
+                RAW_PANIC("lseek failed");
             }
             if (raw_read(md_fd, buf, mc_i->length) != mc_i->length) {
-                PANIC("read failed");
+                RAW_PANIC("read failed");
             }
             if (!fastlz_decompress(addr, mc_i->length, addr, mc_i->size)) {
-                PANIC("decompress failed");
+                RAW_PANIC("decompress failed");
             }
         }
     }
 
     raw_close(md_fd);
-    LOG(1, "begin execution");
+    RAW_LOG("begin execution");
 }

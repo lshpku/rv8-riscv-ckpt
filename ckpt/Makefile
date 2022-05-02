@@ -10,32 +10,32 @@ CFLAGS  = -O3
 all:
 
 ifdef FAR_CALL
-$(eval SDEFS += -DFAR_CALL=$(FAR_CALL))
+$(eval CDEFS += -DFAR_CALL=$(FAR_CALL))
 endif
 ifdef ALTER_RD
-$(eval SDEFS += -DALTER_RD=$(ALTER_RD))
+$(eval CDEFS += -DALTER_RD=$(ALTER_RD))
 endif
 ifdef NORVC
-$(eval SDEFS += -DNORVC=1)
+$(eval CDEFS += -DNORVC=1)
 endif
 ifdef VERBOSE
-$(eval SDEFS += -DVERBOSE=1)
+$(eval CDEFS += -DVERBOSE=1)
 endif
 
 near%.o: near.S
-	$(CC) $(SDEFS) -DNEAR_BUF=$(NEAR_BUF) -c -o $@ $<
+	$(CC) $(CDEFS) -DNEAR_BUF=$(NEAR_BUF) -c -o $@ $<
 near%.partial: near%.o
 	$(LD) -e 0 -o $@ $^
 
 far%.o: far.S
 	$(CC) -DFAR_STACK_TOP=$(FAR_STACK_TOP) -c -o $@ $<
 replay%.o: replay.c
-	$(CC) $(CFLAGS) -fPIC -c -o $@ $<
+	$(CC) $(CFLAGS) -fPIC $(CDEFS) -c -o $@ $<
 far%.partial: far%.o replay%.o
 	$(LD) -e 0 -o $@ $^
 
 jump%.o: jump.S
-	$(CC) $(SDEFS) -DOFFSET=$(OFFSET) -c -o $@ $<
+	$(CC) $(CDEFS) -DOFFSET=$(OFFSET) -c -o $@ $<
 jump%.partial: jump%.o
 	$(LD) -e 0 -o $@ $^
 
