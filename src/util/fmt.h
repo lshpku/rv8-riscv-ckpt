@@ -339,8 +339,9 @@ namespace riscv {
 				bool first_visit = mem->fetch(addr, inst ,length);
 
 				// look for breakpoint
-				// The breakpoint instruction is actually skipped in
-				// consecutive checkpoints
+				// The breakpoint instruction is not executed between
+				// two consecutive checkpoints, but is saved in the 
+				// former one, which enables checkpoint concatenating.
 				if (proc.instret - begin_instret > period) {
 					// ecall
 					if (inst == ECALL) {

@@ -635,7 +635,8 @@ CheckpointManager riscv::checkpoint = {};
 void CheckpointManager::break_here(uint64_t instret)
 {
 	std::string filename;
-	sprintf(filename, "checkpoint_%lu_%lu.dump", begin_instret, instret);
+	sprintf(filename, "checkpoint_%019lu_%019lu.dump",
+		begin_instret, instret);
 	std::string filepath = dirname + ("/" + filename);
 
 	// dump memory
