@@ -17,6 +17,13 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
             if ((long)addr < 0) {
                 RAW_PANIC("mmap file failed");
             }
+            // force allocating pages in memory
+            for (uint64_t i = 0; i < mc_i->size; i += 4096) {
+                // lw is rvc-able and multi-arch compatible
+                asm volatile("lw x0, 0(%0)"
+                             :
+                             : "r"(addr + i));
+            }
         } else {
             void *addr = (void *)mc_i->addr;
             addr = raw_mmap(addr, mc_i->size,
