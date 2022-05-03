@@ -106,9 +106,47 @@ RISC-V Checkpoint with rv8
 ## 进阶使用
 
 ### 添加CSR性能计数器
+* 性能计数器在`replay.h`和`replay.c`中定义
+* `replay()`在执行开始时保存当前数值，在结束时再读一次，将两次的差值打印出来
+
+### SimPoint
+* **新增** 支持输出[SimPoint 3.0](https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm)格式的BBV文件
+* 先自行编译[SimPoint 3.0](https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm)，注意用低版本的gcc或clang，新版会报错
+* 在处理内存镜像时，加上测试程序的路径（此处为`hello`），用于分析基本块
+    ```bash
+    $ python3 ckpt/parse.py --exec hello test/test.log
+    ```
+* 此时每段切片都会多出一个`.bb`文件
+    ```bash
+    $ ls test/*.bb
+    # checkpoint_0000000000000000000_0000000000100033179.bb
+    # checkpoint_0000000000100033180_0000000000200605926.bb
+    # checkpoint_0000000000200605927_0000000000300615947.bb
+    # ...
+    ```
+* 先将这些`.bb`文件合并为一个，由于文件名是按序的，所以合并的内容也是按序的
+    ```bash
+    $ cat test/*.bb > test/test.bb
+    ```
+* 使用`simpoint`处理
+    ```bash
+    $ simpoint -loadFVFile test/test.bb -maxK 30 \
+        -saveSimpoints test/simpoints.txt \
+        -saveSimpointWeights test/weights.txt
+    ```
+* 若切片数量较多，可以用一个脚本收集`simpoint`选中的切片
+    ```bash
+    $ python3 ckpt/collect.py test/test.log
+    # found 803 checkpoints
+    # input simpoint (end with an empty line):
+    # ...
+    # copying checkpoints
+    # generating run script
+    # compressing
+    ```
 
 ### 开启预热
-
+TODO
 
 ## 原理介绍
 请见[Checkpoint原理介绍](ckpt/README.md)
