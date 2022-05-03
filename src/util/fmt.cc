@@ -622,7 +622,11 @@ void MemTrace::dump(FILE *dump_file, FILE *cfg_file)
 {
 	for (auto &page : pages) {
 		fwrite(page.second, sizeof(PageRec), 1, dump_file);
-		fprintf(cfg_file, "dump 0x%lx\n", page.first);
+		fprintf(cfg_file, "page 0x%lx\n", page.first);
+	}
+	for (auto &exec : execs) {
+		fwrite(exec.second, sizeof(ExecRec), 1, dump_file);
+		fprintf(cfg_file, "exec 0x%lx\n", exec.first);
 	}
 }
 

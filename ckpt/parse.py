@@ -453,7 +453,7 @@ class Checkpoint:
             buf.append(syscall.make_entry())
 
         # store assertions
-        for addr, size, data in self.stores:
+        for addr, size, data in sorted(self.stores):
             addr = addr.to_bytes(8, 'little')
             size = size.to_bytes(8, 'little')
             data = data.to_bytes(8, 'little')
@@ -561,11 +561,16 @@ def parse_log(path):
             path = os.path.join(dirname, tokens[1])
             dumpfile = open(path, 'rb')
             cur.path_prefix, _ = os.path.splitext(path)
-        elif tokens[0] == 'dump':
+        elif tokens[0] == 'page':
             bitmap = dumpfile.read(PAGE_SIZE // 8)
             data = dumpfile.read(PAGE_SIZE)
             pn = int(tokens[1], 16)
             cur.pages[pn] = Page(bitmap, data)
+        elif tokens[0] == 'exec':
+            pass
+
+        else:
+            raise KeyError('unknown prompt: ' + tokens[0])
 
     f.close()
     while children:

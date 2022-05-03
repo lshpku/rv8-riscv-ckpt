@@ -190,11 +190,11 @@ namespace riscv {
 	};
 
 	struct ExecRec {
-		// only count non-rvc instructions
-		uint32_t count[1024];
+		// instructions are 2-aligned
+		uint32_t count[2048];
 
 		uint32_t &get(int offs) {
-			return count[(offs >> 2) & 0x3ff];
+			return count[(offs >> 1) & 0x7ff];
 		}
 
 		ExecRec() { memset(this, 0, sizeof(ExecRec)); }
@@ -244,9 +244,7 @@ namespace riscv {
 					page->put((addr + i) & 0xfff, (inst >> (i * 8)) & 0xff);
 				}
 			}
-			if (length == 4) {
-				get_exec_counter(addr)++;
-			}
+			get_exec_counter(addr)++;
 			return first_visit;
 		}
 
