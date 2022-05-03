@@ -418,14 +418,15 @@ class Checkpoint:
 
         entry_call = MakeHelper.near(self.entry_pc, entry_addr, near_buf)
         self.pages.put(entry_addr, entry_call)
-        self.regs[0] = far_addr.to_bytes(8, 'little')
-        self.regs[10] = entry_addr.to_bytes(8, 'little')
 
         # write supervisor
         far_call = MakeHelper.far(far_stack_top, verbose)
         self.pages.put(far_addr, far_call)
         self.pages.put(replay_table_addr, replay_table)
-        self.pages.put(regs_addr, b''.join(self.regs))
+        regs = self.regs.copy()
+        regs[0] = far_addr.to_bytes(8, 'little')
+        regs[10] = entry_addr.to_bytes(8, 'little')
+        self.pages.put(regs_addr, b''.join(regs))
         self.pages.put(near_buf, self.regs[2])
         self.pages.put(far_stack_top - 8,
                        replay_table_addr.to_bytes(8, 'little'))
