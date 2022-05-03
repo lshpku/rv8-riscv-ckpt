@@ -39,7 +39,7 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
             if (raw_read(md_fd, buf, mc_i->length) != mc_i->length) {
                 RAW_PANIC("read failed");
             }
-            if (!fastlz_decompress(addr, mc_i->length, addr, mc_i->size)) {
+            if (!fastlz_decompress(buf, mc_i->length, addr, mc_i->size)) {
                 RAW_PANIC("decompress failed");
             }
         }

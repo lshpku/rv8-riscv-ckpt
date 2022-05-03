@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
         mmap_cfg *mc_i = (mmap_cfg *)mc_p + i;
         if (fscanf(cfg_f, "%llx%llx%x%x",
                    &mc_i->addr, &mc_i->offset,
-                   &mc_i->length, &mc_i->size) != 4) {
+                   &mc_i->size, &mc_i->length) != 4) {
             fprintf(stderr, "expected mmap_cfg\n");
             return -1;
         }
