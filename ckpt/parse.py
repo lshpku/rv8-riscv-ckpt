@@ -77,39 +77,37 @@ class MakeHelper:
         return MakeHelper.make('far.bin', args)
 
 
-class BBVHelper:
+class BBVBase:
     LINE = re.compile(r'^\s+([0-9a-f]+):\s+[0-9a-f]+\s+(\S+)')
     CFIS = {
         'jal', 'jalr', 'beq', 'bne', 'blt', 'bge', 'bltu', 'bgeu',
         'c.j', 'c.jal', 'c.jr', 'c.jalr', 'c.beqz', 'c.bnez'}
 
-    cfi_map = {}  # eff_pc: index
-
-    @staticmethod
-    def load_exec(path: str):
+    def __init__(self, path: str):
         print(path, 'disassemble')
         cmd = ['riscv64-unknown-linux-gnu-objdump', '-d',
                '-z', '-j', '.text', '-Mno-aliases', path]
         p = Popen(cmd, stdout=PIPE, encoding='utf-8')
+
+        self.cfi_map = {}
         while True:
             line = p.stdout.readline()
             if not line:
                 break
-            m = BBVHelper.LINE.match(line)
+            m = BBVBase.LINE.match(line)
             if m is None:
                 continue
             pc, inst = m.groups()
-            if inst in BBVHelper.CFIS:
-                eff_pc = int(pc, 16) >> 1
-                index = len(BBVHelper.cfi_map) + 1
-                BBVHelper.cfi_map[eff_pc] = index
+            if inst in BBVBase.CFIS:
+                index = len(self.cfi_map) + 1
+                self.cfi_map[int(pc, 16)] = index
+
         if p.wait():
             exit(p.returncode)
         print(path, 'done')
 
-    @staticmethod
-    def index(pc: int) -> int:
-        return BBVHelper.cfi_map.get(pc >> 1)
+    def index(self, pc: int) -> int:
+        return self.cfi_map.get(pc)
 
 
 class Page:
@@ -285,7 +283,7 @@ class PageMap:
         for i, (pn, page) in enumerate(page_list):
             dumpfile.write(page.get())
 
-    def dump_bbv(self, f: io.StringIO):
+    def dump_bbv(self, bbv: BBVBase, f: io.StringIO):
         page_list = sorted(self._map.items())
         f.write('T')
         for pn, page in page_list:
@@ -295,7 +293,7 @@ class PageMap:
                 if not count:
                     continue
                 pc = pn * PAGE_SIZE + i * 2
-                index = BBVHelper.index(pc)
+                index = bbv.index(pc)
                 if index is not None:
                     f.write(':%d:%d ' % (index, count))
         f.write('\n')
@@ -351,6 +349,7 @@ class Checkpoint:
         self.pages = PageMap()
         self.path_prefix = None
         self.stores = []  # (addr, size, data)
+        self.bbv = None
 
     def process_once(self, verbose=False, suffix='.1'):
         # reserve space for near_calls
@@ -440,10 +439,10 @@ class Checkpoint:
         cfgfile.close()
 
     def process(self):
-        if BBVHelper.cfi_map:
+        if self.bbv is not None:
             bbvpath = self.path_prefix + '.bb'
             with open(bbvpath, 'w') as f:
-                self.pages.dump_bbv(f)
+                self.pages.dump_bbv(self.bbv, f)
 
         # break with ecall or first-executed instruction
         if self.breakpoint is None:
@@ -529,7 +528,7 @@ class Checkpoint:
         return b''.join(buf)
 
 
-def parse_log(path):
+def main(logpath, execpath):
     '''
     Log types:
         begin <addr>
@@ -543,11 +542,12 @@ def parse_log(path):
         page <pn>
         exec <pn>
     '''
-    f = open(path)
-    dirname = os.path.dirname(path)
+    f = open(logpath)
+    dirname = os.path.dirname(logpath)
     cur = None
     dumpfile = None
     children = set()  # pid
+    bbv = BBVBase(execpath) if execpath else None
 
     def submit_task():
         if cur is None:
@@ -562,11 +562,11 @@ def parse_log(path):
         # block main if parallel jobs reach limitation
         if len(children) == args.jobs:
             pid, status = os.wait()
+            children.remove(pid)
             if status:
                 while children:
                     children.remove(os.wait()[0])
                 exit(-1)
-            children.remove(pid)
 
         # do fork
         pid = os.fork()
@@ -589,6 +589,7 @@ def parse_log(path):
             submit_task()
             cur = Checkpoint()
             cur.entry_pc = int(tokens[1], 16)
+            cur.bbv = bbv
 
         elif tokens[0] in {'ireg', 'freg'}:
             for val in tokens[1:]:
@@ -653,8 +654,6 @@ def parse_log(path):
 if __name__ == '__main__':
     args = parser.parse_args()
     try:
-        if args.exec:
-            BBVHelper.load_exec(args.exec)
-        parse_log(args.path)
+        main(args.path, args.exec)
     except KeyboardInterrupt:
         pass
