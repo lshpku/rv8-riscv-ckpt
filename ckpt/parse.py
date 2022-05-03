@@ -481,21 +481,22 @@ class Checkpoint:
                 raise Exception('incomplete execution')
             if line.startswith('execute'):
                 val = int(line.split()[1], 16)
+                syscall = SysCall(addr, val, alter_rd=rd)
+                new_syscalls.append(syscall)
                 repeat -= 1
-                if repeat > 0:
-                    syscall = SysCall(addr, val, alter_rd=rd)
-                    new_syscalls.append(syscall)
-                else:
-                    syscall = SysCall(addr, is_break=True)
-                    new_syscalls.append(syscall)
-                    p.kill()
-                    break
             elif line.startswith('syscall'):
                 val = int(line.split()[1], 16)
                 syscall = syscall_queue.pop()
                 assert val == syscall.retval
                 new_syscalls.append(syscall)
-        assert not syscall_queue
+            # omit the last occurence of the breakpoint, since this
+            # execution shouldn't happen, and may incur errors (e.g.
+            # loading from a new page)
+            if repeat == 1 and not syscall_queue:
+                syscall = SysCall(addr, is_break=True)
+                new_syscalls.append(syscall)
+                p.kill()
+                break
 
         # process again with the new syscall sequence
         print(self.path_prefix, 'second pass')
