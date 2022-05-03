@@ -35,12 +35,11 @@ static void fast_memcpy(char *dest, const char *src, size_t n)
 static void raw_log_u64(uint64_t value)
 {
     char buf[17];
-    uint64_t r = value;
     for (int i = 0; i < sizeof(buf) - 1; i++) {
-        int b = r & 0xf;
+        int b = value & 0xf;
         char c = b < 10 ? '0' + b : 'a' + b - 10;
         buf[sizeof(buf) - 2 - i] = c;
-        r >>= 4;
+        value >>= 4;
     }
     buf[sizeof(buf) - 1] = '\n';
     raw_write(1, buf, sizeof(buf));
@@ -53,11 +52,11 @@ replay_cfg *replay(replay_cfg *head, uint64_t *csrv)
         case REPLAY_RET:
             goto end;
         case REPLAY_EXIT: {
+            uint64_t cycle = __csrr_cycle();
+            uint64_t instret = __csrr_instret();
             if (!(head = check_stores(head + 1))) {
                 RAW_PANIC("store assertion failed");
             }
-            uint64_t cycle = __csrr_cycle();
-            uint64_t instret = __csrr_instret();
             RAW_LOG("finish");
             RAW_PRINT("cycle ");
             raw_log_u64(cycle - csrv[0]);
