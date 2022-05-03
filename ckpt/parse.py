@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import copy
 import argparse
 import hashlib
@@ -8,6 +9,7 @@ from typing import Union, List, Tuple
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
+parser.add_argument('--exec')
 parser.add_argument('-j', '--jobs', type=int, default=1)
 
 SRC_DIR = os.path.dirname(__file__)
@@ -75,6 +77,41 @@ class MakeHelper:
         return MakeHelper.make('far.bin', args)
 
 
+class BBVHelper:
+    LINE = re.compile(r'^\s+([0-9a-f]+):\s+[0-9a-f]+\s+(\S+)')
+    CFIS = {
+        'jal', 'jalr', 'beq', 'bne', 'blt', 'bge', 'bltu', 'bgeu',
+        'c.j', 'c.jal', 'c.jr', 'c.jalr', 'c.beqz', 'c.bnez'}
+
+    cfi_map = {}  # eff_pc: index
+
+    @staticmethod
+    def load_exec(path: str):
+        print(path, 'disassemble')
+        cmd = ['riscv64-unknown-linux-gnu-objdump', '-d',
+               '-z', '-j', '.text', '-Mno-aliases', path]
+        p = Popen(cmd, stdout=PIPE, encoding='utf-8')
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                break
+            m = BBVHelper.LINE.match(line)
+            if m is None:
+                continue
+            pc, inst = m.groups()
+            if inst in BBVHelper.CFIS:
+                eff_pc = int(pc, 16) >> 1
+                index = len(BBVHelper.cfi_map) + 1
+                BBVHelper.cfi_map[eff_pc] = index
+        if p.wait():
+            exit(p.returncode)
+        print(path, 'done')
+
+    @staticmethod
+    def index(pc: int) -> int:
+        return BBVHelper.cfi_map.get(pc >> 1)
+
+
 class Page:
 
     def __init__(self, bitmap: Union[int, bytes], data: bytes):
@@ -83,6 +120,14 @@ class Page:
         else:
             self.bitmap = int.from_bytes(bitmap, 'little')
         self.data = io.BytesIO(data)
+        self.exec_count = None
+
+    def set_exec_count(self, data: bytes):
+        self.exec_count = [None] * (PAGE_SIZE // 2)
+        for i in range(PAGE_SIZE // 2):
+            b, e = i * 4, (i + 1) * 4
+            count = int.from_bytes(data[b:e], 'little')
+            self.exec_count[i] = count
 
     def put(self, offs: int, data: bytes):
         assert offs + len(data) <= PAGE_SIZE
@@ -240,6 +285,21 @@ class PageMap:
         for i, (pn, page) in enumerate(page_list):
             dumpfile.write(page.get())
 
+    def dump_bbv(self, f: io.StringIO):
+        page_list = sorted(self._map.items())
+        f.write('T')
+        for pn, page in page_list:
+            if page.exec_count is None:
+                continue
+            for i, count in enumerate(page.exec_count):
+                if not count:
+                    continue
+                pc = pn * PAGE_SIZE + i * 2
+                index = BBVHelper.index(pc)
+                if index is not None:
+                    f.write(':%d:%d ' % (index, count))
+        f.write('\n')
+
 
 class SysCall:
 
@@ -380,6 +440,11 @@ class Checkpoint:
         cfgfile.close()
 
     def process(self):
+        if BBVHelper.cfi_map:
+            bbvpath = self.path_prefix + '.bb'
+            with open(bbvpath, 'w') as f:
+                self.pages.dump_bbv(f)
+
         # break with ecall or first-executed instruction
         if self.breakpoint is None:
             print(self.path_prefix, 'single pass')
@@ -475,7 +540,8 @@ def parse_log(path):
         break <addr> {ecall|first|firstrvc}
         break <addr> repeat <times> <rd>
         file <path>
-        dump <pn>
+        page <pn>
+        exec <pn>
     '''
     f = open(path)
     dirname = os.path.dirname(path)
@@ -567,7 +633,9 @@ def parse_log(path):
             pn = int(tokens[1], 16)
             cur.pages[pn] = Page(bitmap, data)
         elif tokens[0] == 'exec':
-            pass
+            data = dumpfile.read(PAGE_SIZE * 2)
+            pn = int(tokens[1], 16)
+            cur.pages[pn].set_exec_count(data)
 
         else:
             raise KeyError('unknown prompt: ' + tokens[0])
@@ -585,6 +653,8 @@ def parse_log(path):
 if __name__ == '__main__':
     args = parser.parse_args()
     try:
+        if args.exec:
+            BBVHelper.load_exec(args.exec)
         parse_log(args.path)
     except KeyboardInterrupt:
         pass
