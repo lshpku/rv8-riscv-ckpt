@@ -53,6 +53,9 @@ cl: main.c cl-wrapper.S cl.bin
 %.bin: %.partial
 	$(OBJCOPY) -O binary $< $@
 
+fastlz.so: FastLZ/fastlz.c
+	gcc -O3 -shared -o $@ $<
+
 clean:
 	rm -f cl *.o *.partial *.bin
 
