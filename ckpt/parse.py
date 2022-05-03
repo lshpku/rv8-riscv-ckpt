@@ -359,7 +359,8 @@ class Checkpoint:
 
         entry_call = MakeHelper.near(self.entry_pc, entry_addr, near_buf)
         self.pages.put(entry_addr, entry_call)
-        self.regs[0] = entry_addr.to_bytes(8, 'little')
+        self.regs[0] = far_addr.to_bytes(8, 'little')
+        self.regs[10] = entry_addr.to_bytes(8, 'little')
 
         # write supervisor
         far_call = MakeHelper.far(far_stack_top, verbose)
@@ -441,6 +442,10 @@ class Checkpoint:
 
     def make_replay_table(self):
         buf = []
+
+        # entrypoint
+        buf.append((2).to_bytes(8, 'little'))
+        buf.append(self.regs[10])  # a0
 
         # syscalls
         # breakpoint is automatically encoded

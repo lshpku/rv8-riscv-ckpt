@@ -48,34 +48,40 @@ static void raw_log_u64(uint64_t value)
 
 replay_cfg *replay(replay_cfg *head, uint64_t *csrv)
 {
-    while (head->addr != REPLAY_RET) {
-        if (head->addr == REPLAY_EXIT) {
+    do {
+        switch (head->addr) {
+        case REPLAY_RET:
+            goto end;
+        case REPLAY_EXIT: {
             if (!(head = check_stores(head + 1))) {
                 RAW_PANIC("store assertion failed");
             }
-			uint64_t cycle = __csrr_cycle();
-			uint64_t instret = __csrr_instret();
+            uint64_t cycle = __csrr_cycle();
+            uint64_t instret = __csrr_instret();
             RAW_LOG("finish");
-			RAW_PRINT("cycle ");
-			raw_log_u64(cycle - csrv[0]);
-			RAW_PRINT("instret ");
-			raw_log_u64(instret - csrv[1]);
+            RAW_PRINT("cycle ");
+            raw_log_u64(cycle - csrv[0]);
+            RAW_PRINT("instret ");
+            raw_log_u64(instret - csrv[1]);
             raw_exit(0);
         }
-        if (head->addr == REPLAY_STAT) {
+        case REPLAY_ENTRY:
             csrv[0] = __csrr_cycle();
             csrv[1] = __csrr_instret();
-        } else {
+            goto end_quiet;
+        default:
             fast_memcpy((void *)head->addr, head->data, head->size);
+            head = (void *)(head + 1) + ((head->size + 7) & ~7);
         }
-        head = (void *)(head + 1) + ((head->size + 7) & ~7);
-    }
+    } while (1);
 
+end:
 #ifdef VERBOSE
-	RAW_PRINT("syscall ");
+    RAW_PRINT("syscall ");
     raw_log_u64(head->size);
 #endif
 
+end_quiet:
     // return with the address of next entry
     return head + 1;
 }
