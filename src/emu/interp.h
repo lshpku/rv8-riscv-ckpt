@@ -7,6 +7,8 @@
 #ifndef rv_interp_h
 #define rv_interp_h
 
+#define NAN_BOXING(prec) do { proc.freg[dec.rd].r.prec.pad = -1; } while (0)
+
 /* Execute Instruction RV32 */
 
 template <bool rvi, bool rvm, bool rva, bool rvs, bool rvf, bool rvd, bool rvq, bool rvc, typename T, typename P>
@@ -996,7 +998,7 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_flw:
 			if (rvf) {
-				u32 t; proc.mmu.template load<P,u32>(proc, proc.ireg[dec.rs1] + dec.imm, t); proc.freg[dec.rd].r.wu.val = t;
+				u32 t; proc.mmu.template load<P,u32>(proc, proc.ireg[dec.rs1] + dec.imm, t); proc.freg[dec.rd].r.wu.val = t; NAN_BOXING(wu);
 			};
 			break;
 		case rv_op_fsw:
@@ -1006,72 +1008,72 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_fmadd_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val + proc.freg[dec.rs3].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val + proc.freg[dec.rs3].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fmsub_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val - proc.freg[dec.rs3].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val - proc.freg[dec.rs3].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fnmsub_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * -proc.freg[dec.rs2].r.s.val + proc.freg[dec.rs3].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * -proc.freg[dec.rs2].r.s.val + proc.freg[dec.rs3].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fnmadd_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * -proc.freg[dec.rs2].r.s.val - proc.freg[dec.rs3].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * -proc.freg[dec.rs2].r.s.val - proc.freg[dec.rs3].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fadd_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val + proc.freg[dec.rs2].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val + proc.freg[dec.rs2].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fsub_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val - proc.freg[dec.rs2].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val - proc.freg[dec.rs2].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fmul_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fdiv_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val / proc.freg[dec.rs2].r.s.val;
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val / proc.freg[dec.rs2].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fsgnj_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = (proc.freg[dec.rs1].r.wu.val & u32(~(1U<<31))) | (proc.freg[dec.rs2].r.wu.val & u32(1U<<31));
+				proc.freg[dec.rd].r.wu.val = (proc.freg[dec.rs1].r.wu.val & u32(~(1U<<31))) | (proc.freg[dec.rs2].r.wu.val & u32(1U<<31)); NAN_BOXING(wu);
 			};
 			break;
 		case rv_op_fsgnjn_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = (proc.freg[dec.rs1].r.wu.val & u32(~(1U<<31))) | (~proc.freg[dec.rs2].r.wu.val & u32(1U<<31));
+				proc.freg[dec.rd].r.wu.val = (proc.freg[dec.rs1].r.wu.val & u32(~(1U<<31))) | (~proc.freg[dec.rs2].r.wu.val & u32(1U<<31)); NAN_BOXING(wu);
 			};
 			break;
 		case rv_op_fsgnjx_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = proc.freg[dec.rs1].r.wu.val ^ (proc.freg[dec.rs2].r.wu.val & u32(1U<<31));
+				proc.freg[dec.rd].r.wu.val = proc.freg[dec.rs1].r.wu.val ^ (proc.freg[dec.rs2].r.wu.val & u32(1U<<31)); NAN_BOXING(wu);
 			};
 			break;
 		case rv_op_fmin_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.s.val = (proc.freg[dec.rs1].r.s.val < proc.freg[dec.rs2].r.s.val) || std::isnan(proc.freg[dec.rs2].r.s.val) ? proc.freg[dec.rs1].r.s.val : proc.freg[dec.rs2].r.s.val;
+				proc.freg[dec.rd].r.s.val = (proc.freg[dec.rs1].r.s.val < proc.freg[dec.rs2].r.s.val) || std::isnan(proc.freg[dec.rs2].r.s.val) ? proc.freg[dec.rs1].r.s.val : proc.freg[dec.rs2].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fmax_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.s.val = (proc.freg[dec.rs1].r.s.val > proc.freg[dec.rs2].r.s.val) || std::isnan(proc.freg[dec.rs2].r.s.val) ? proc.freg[dec.rs1].r.s.val : proc.freg[dec.rs2].r.s.val;
+				proc.freg[dec.rd].r.s.val = (proc.freg[dec.rs1].r.s.val > proc.freg[dec.rs2].r.s.val) || std::isnan(proc.freg[dec.rs2].r.s.val) ? proc.freg[dec.rs1].r.s.val : proc.freg[dec.rs2].r.s.val; NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fsqrt_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = riscv::f32_sqrt(proc.freg[dec.rs1].r.s.val);
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = riscv::f32_sqrt(proc.freg[dec.rs1].r.s.val); NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fle_s:
@@ -1101,12 +1103,12 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_fcvt_s_w:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.w.val);
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.w.val); NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fcvt_s_wu:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.wu.val);
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.wu.val); NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fmv_x_s:
@@ -1121,7 +1123,7 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_fmv_s_x:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = proc.ireg[dec.rs1].r.wu.val;
+				proc.freg[dec.rd].r.wu.val = proc.ireg[dec.rs1].r.wu.val; NAN_BOXING(wu);
 			};
 			break;
 		case rv_op_fcvt_l_s:
@@ -1136,12 +1138,12 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_fcvt_s_l:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.l.val);
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.l.val); NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fcvt_s_lu:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.lu.val);
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.lu.val); NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fld:
@@ -1221,7 +1223,7 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_fcvt_s_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.freg[dec.rs1].r.d.val);
+				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.freg[dec.rs1].r.d.val); NAN_BOXING(s);
 			};
 			break;
 		case rv_op_fcvt_d_s:
