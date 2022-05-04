@@ -610,7 +610,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
-		if (ret >= 0) {
+		if (ret > 0) {
 			checkpoint.syscall(ret, (void*)(addr_t)proc.ireg[rv_ireg_a1], ret);
 		} else {
 			checkpoint.syscall(cvt_error(ret));
@@ -716,7 +716,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], path, (long)proc.ireg[rv_ireg_a2],
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
-		if (ret >= 0) {
+		if (ret > 0) {
 			checkpoint.syscall(ret, buf, ret);
 		} else {
 			checkpoint.syscall(cvt_error(ret));
