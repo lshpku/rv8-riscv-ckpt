@@ -17,12 +17,12 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
             if ((long)addr < 0) {
                 RAW_PANIC("mmap file failed");
             }
-            // force allocating pages in memory
+            // force OS to allocate private pages by reading and
+            // writing one word of it, in case the copy-on-write
+            // handling happens during execution
             for (uint64_t i = 0; i < mc_i->size; i += 4096) {
-                // lw is rvc-able and multi-arch compatible
-                asm volatile("lw x0, 0(%0)"
-                             :
-                             : "r"(addr + i));
+                volatile long *p = addr + i;
+                *p = *p;
             }
         } else {
             void *addr = (void *)mc_i->addr;
