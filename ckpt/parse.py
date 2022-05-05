@@ -62,7 +62,10 @@ class MakeHelper:
         if far_pc is not None:
             args += ['FAR_CALL=0x%x' % far_pc]
         if alter_rd is not None and alter_rd != 10:
-            args += ['ALTER_RD=x%d' % alter_rd]
+            if alter_rd == 2:
+                args += ['ALTER_RD_IS_SP=1']
+            else:
+                args += ['ALTER_RD=x%d' % alter_rd]
         if norvc:
             args += ['NORVC=1']
         near = MakeHelper.make('near.bin', args)
@@ -360,12 +363,10 @@ class Checkpoint:
         free_list = self.pages.make_free_list()
         near_map = {}  # base_addr: near_addr
 
-        size1 = len(MakeHelper.near(0, 0, 0, 0))
-        size2 = len(MakeHelper.near(0, 0, 0, 0, 0))
         for syscall in self.syscalls:
             if syscall.addr in near_map:
                 continue
-            size = size1 if syscall.alter_rd is None else size2
+            size = len(MakeHelper.near(0, 0, 0, 0, syscall.alter_rd))
             near_addr = self.pages.reserve(free_list, syscall.addr, size)
             near_map[syscall.addr] = near_addr
 

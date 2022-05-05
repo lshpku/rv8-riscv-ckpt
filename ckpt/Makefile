@@ -15,6 +15,9 @@ endif
 ifdef ALTER_RD
 $(eval CDEFS += -DALTER_RD=$(ALTER_RD))
 endif
+ifdef ALTER_RD_IS_SP
+$(eval CDEFS += -DALTER_RD_IS_SP=1)
+endif
 ifdef NORVC
 $(eval CDEFS += -DNORVC=1)
 endif
