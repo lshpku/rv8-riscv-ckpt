@@ -11,6 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('path')
 parser.add_argument('--exec')
 parser.add_argument('-j', '--jobs', type=int, default=1)
+parser.add_argument('-r', '--rebuild', action='store_true')
 
 SRC_DIR = os.path.dirname(__file__)
 WORK_DIR = os.getcwd()
@@ -441,6 +442,7 @@ class Checkpoint:
         cfgfile.close()
 
     def process(self):
+        # dump bbv
         if self.bbv is not None:
             bbvpath = self.path_prefix + '.bb'
             with open(bbvpath, 'w') as f:
@@ -530,8 +532,21 @@ class Checkpoint:
 
         return b''.join(buf)
 
+    def exists(self) -> bool:
+        if self.bbv is not None:
+            bbvpath = self.path_prefix + '.bb'
+            if not os.path.exists(bbvpath):
+                return False
+        if self.breakpoint is None:
+            cfgpath = self.path_prefix + '.1.cfg'
+            dumppath = self.path_prefix + '.1.dump'
+        else:
+            cfgpath = self.path_prefix + '.2.cfg'
+            dumppath = self.path_prefix + '.2.dump'
+        return os.path.exists(cfgpath) and os.path.exists(dumppath)
 
-def main(logpath, execpath):
+
+def main(logpath, execpath, rebuild):
     '''
     Log types:
         begin <addr>
@@ -621,28 +636,34 @@ def main(logpath, execpath):
                 syscal = SysCall(addr, is_break=True)
                 cur.syscalls.append(syscal)
 
-        elif tokens[0] == 'store':
-            addr = int(tokens[1], 16)
-            size = len(tokens[2]) // 2
-            data = int(tokens[2], 16)
-            cur.stores.append((addr, size, data))
-
         elif tokens[0] == 'file':
             path = os.path.join(dirname, tokens[1])
-            dumpfile = open(path, 'rb')
             cur.path_prefix, _ = os.path.splitext(path)
+            if rebuild or not cur.exists():
+                dumpfile = open(path, 'rb')
+            else:
+                cur = None
         elif tokens[0] == 'page':
-            bitmap = dumpfile.read(PAGE_SIZE // 8)
-            data = dumpfile.read(PAGE_SIZE)
-            pn = int(tokens[1], 16)
-            cur.pages[pn] = Page(bitmap, data)
+            if cur is not None:
+                bitmap = dumpfile.read(PAGE_SIZE // 8)
+                data = dumpfile.read(PAGE_SIZE)
+                pn = int(tokens[1], 16)
+                cur.pages[pn] = Page(bitmap, data)
         elif tokens[0] == 'exec':
-            data = dumpfile.read(PAGE_SIZE * 2)
-            pn = int(tokens[1], 16)
-            cur.pages[pn].set_exec_count(data)
+            if cur is not None:
+                data = dumpfile.read(PAGE_SIZE * 2)
+                pn = int(tokens[1], 16)
+                cur.pages[pn].set_exec_count(data)
+
+        elif tokens[0] == 'store':
+            if cur is not None:
+                addr = int(tokens[1], 16)
+                size = len(tokens[2]) // 2
+                data = int(tokens[2], 16)
+                cur.stores.append((addr, size, data))
 
         else:
-            raise KeyError('unknown prompt: ' + tokens[0])
+            raise KeyError(tokens[0])
 
     f.close()
     while children:
@@ -657,6 +678,6 @@ def main(logpath, execpath):
 if __name__ == '__main__':
     args = parser.parse_args()
     try:
-        main(args.path, args.exec)
+        main(args.path, args.exec, args.rebuild)
     except KeyboardInterrupt:
         pass
