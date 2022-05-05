@@ -5,15 +5,20 @@ from subprocess import Popen, DEVNULL
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
 
+srcdir = os.path.dirname(os.path.abspath(__file__))
+comppath = os.path.join(srcdir, 'compress.py')
+clpath = os.path.join(srcdir, 'cl')
+
 if __name__ == '__main__':
     args = parser.parse_args()
-    dirname = os.path.dirname(args.path)
-    basename = os.path.basename(args.path)
-    if dirname:
-        os.chdir(dirname)
+    destdir = os.path.dirname(args.path)
+    logname = os.path.basename(args.path)
+    if destdir:
+        os.chdir(destdir)
 
+    print('reading log')
     dump_names = []
-    with open(basename) as f:
+    with open(logname) as f:
         while True:
             line = f.readline()
             if not line:
@@ -42,8 +47,6 @@ if __name__ == '__main__':
             picked_names.append(name + '.1')
 
     print('compressing')
-    srcdir = os.path.dirname(__file__)
-    comppath = os.path.join(srcdir, 'compress.py')
     for name in picked_names:
         cmd = ['python3', comppath, name + '.cfg', name + '.dump']
         p = Popen(cmd, stdout=DEVNULL)
@@ -63,3 +66,14 @@ if __name__ == '__main__':
             f.write('echo %s >> run.log\n' % name)
             f.write('./cl %s.c.cfg %s.c.dump\n' % (name, name))
             f.write('./cl %s.c.cfg %s.c.dump >> run.log\n' % (name, name))
+
+    print('verifying')
+    os.chdir('simpoints')
+    nstr = str(len(picked_names))
+    for i, name in enumerate(picked_names, 1):
+        print('\r%*d/%s' % (len(nstr), i, nstr), end='')
+        cmd = ['spike', 'pk', clpath, name + '.c.cfg', name + '.c.dump']
+        p = Popen(cmd, stdout=DEVNULL)
+        if p.wait():
+            print('spike returned %d: %s' (p.returncode, name))
+    print()
