@@ -1,7 +1,6 @@
 import os
-import shutil
 import argparse
-import subprocess
+from subprocess import Popen, DEVNULL
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
@@ -34,27 +33,33 @@ if __name__ == '__main__':
         i, _ = line.split()
         simpoints.append(int(i))
 
-    pick_names = []
+    picked_names = []
     for i in simpoints:
         name = dump_names[i]
         if os.path.exists(name + '.2.cfg'):
-            pick_names.append(name + '.2')
+            picked_names.append(name + '.2')
         else:
-            pick_names.append(name + '.1')
+            picked_names.append(name + '.1')
+
+    print('compressing')
+    srcdir = os.path.dirname(__file__)
+    comppath = os.path.join(srcdir, 'compress.py')
+    for name in picked_names:
+        cmd = ['python3', comppath, name + '.cfg', name + '.dump']
+        p = Popen(cmd, stdout=DEVNULL)
+        if p.wait():
+            exit(p.returncode)
 
     print('copying checkpoints')
     os.makedirs('simpoints', exist_ok=True)
-    for name in pick_names:
-        shutil.copyfile(name + '.cfg', 'simpoints/' + name + '.cfg')
-        shutil.copyfile(name + '.dump', 'simpoints/' + name + '.dump')
+    for name in picked_names:
+        os.rename(name + '.c.cfg', 'simpoints/' + name + '.c.cfg')
+        os.rename(name + '.c.dump', 'simpoints/' + name + '.c.dump')
 
     print('generating run script')
     with open('simpoints/run.sh', 'w') as f:
-        for name in pick_names:
-            f.write('./cl %s.cfg %s.dump\n' % (name, name))
-
-    print('compressing')
-    cmd = ['tar', 'czf', 'simpoints.tgz', 'simpoints/']
-    p = subprocess.Popen(cmd)
-    if p.wait():
-        exit(p.returncode)
+        for name in picked_names:
+            f.write('echo %s\n' % name)
+            f.write('echo %s >> run.log\n' % name)
+            f.write('./cl %s.c.cfg %s.c.dump\n' % (name, name))
+            f.write('./cl %s.c.cfg %s.c.dump >> run.log\n' % (name, name))
