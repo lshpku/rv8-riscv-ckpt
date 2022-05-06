@@ -148,5 +148,16 @@ RISC-V Checkpoint with rv8
 ### 开启预热
 TODO
 
+### 故障排查
+#### 运行`ckpt/parse.py`时报`expected cl`异常
+* 原因：当前开的进程数太多，导致系统管道断开；代码本身没有错
+* 解决方法：重新运行`ckpt/parse.py`，注意不要加`--rebuild`（`-r`）参数，这样它会自动跳过已经处理过的切片，从上次错误的地方开始继续执行
+
+#### 某个切片用rv-sim正常运行，但用spike/qemu/FPGA报错
+* 报错内容为`store assertion failed`，`illegal instruction`等
+* 原因：rv-sim的浮点不遵守RISC-V的标准（直接用x86跑的），它自己复现没有错，但拿到别的机器上就不对了
+* 解决办法：除非把rv-sim的浮点计算全部换掉，否则无法解决，所以如果这个切片不是simpoint就别管了
+
+
 ## 原理介绍
 请见[Checkpoint原理介绍](ckpt/README.md)
