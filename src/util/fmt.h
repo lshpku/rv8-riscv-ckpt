@@ -227,15 +227,6 @@ namespace riscv {
 			return page;
 		}
 
-		PageRec* get_page_init(uint64_t pn) {
-			PageRec *&page = pages[pn];
-			if (page == NULL) {
-				page = new PageRec;
-				memcpy(page->content, (void *)(pn << 12), 4096);
-			}
-			return page;
-		}
-
 		uint32_t &get_exec_counter(uint64_t addr) {
 			ExecRec *&exec = execs[addr >> 12];
 			if (exec == NULL) {
@@ -244,28 +235,41 @@ namespace riscv {
 			return exec->get(addr & 0xfff);
 		}
 
+		template <typename T>
+		bool fetch(PageRec *page, int offset, T inst) {
+			int mask = page->check<T>(offset);
+			switch (mask) {
+				case 0:
+					page->put(offset, inst);
+					return true;
+				case (1 << sizeof(T)) - 1:
+					return false;
+			}
+			for (int i = 0; i < (int)sizeof(T); i++) {
+				if (mask & (1 << i)) {
+					page->put(offset, (char)(inst >> (i * 8)));
+				}
+			}
+			return false;
+		}
+
 		bool fetch(uint64_t addr, uint64_t inst, int length) {
 			get_exec_counter(addr)++;
-			// to accelerate fetch, page content is set on init
-			PageRec *page = get_page_init(addr >> 12);
+			PageRec *page = get_page(addr >> 12);
 			int offset = addr & 0xfff;
+			// fetch is expected to be 2-aligned, even for 4-byte insts
 			if (length == 2) {
-				bool first = page->check<uint16_t>(offset) == 0;
-				page->set<uint16_t>(offset);
-				return first;
+				return fetch(page, offset, (uint16_t)inst);
 			}
-			if ((addr & 3) < 6) {
-				bool first = page->check<uint32_t>(offset) == 0;
-				page->set<uint32_t>(offset);
-				return first;
+			if ((addr & 3) == 0) {
+				return fetch(page, offset, (uint32_t)inst);
 			}
-			bool first1 = page->check<uint16_t>(offset) == 0;
-			page->set<uint16_t>(offset);
+			bool first1 = fetch(page, offset, (uint16_t)inst);
 			if (offset + 2 == 4096) {
-				page = get_page_init((addr >> 12) + 1);
+				page = get_page((addr >> 12) + 1);
+				offset -= 4096;
 			}
-			bool first2 = page->check<uint16_t>(offset + 2) == 0;
-			page->set<uint16_t>(offset + 2);
+			bool first2 = fetch(page, offset + 2, (uint16_t)(inst >> 16));
 			return first1 && first2;
 		}
 
