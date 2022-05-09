@@ -12,6 +12,7 @@ parser.add_argument('path')
 parser.add_argument('--exec')
 parser.add_argument('-j', '--jobs', type=int, default=1)
 parser.add_argument('-r', '--rebuild', action='store_true')
+parser.add_argument('-v', '--verify', action='store_true')
 
 SRC_DIR = os.path.dirname(__file__)
 WORK_DIR = os.getcwd()
@@ -88,7 +89,7 @@ class BBVBase:
         'c.j', 'c.jal', 'c.jr', 'c.jalr', 'c.beqz', 'c.bnez'}
 
     def __init__(self, path: str):
-        print(path, 'disassemble')
+        print(path, 'disassembling')
         cmd = ['riscv64-unknown-linux-gnu-objdump', '-d',
                '-z', '-j', '.text', '-Mno-aliases', path]
         p = Popen(cmd, stdout=PIPE, encoding='utf-8')
@@ -354,6 +355,7 @@ class Checkpoint:
         self.path_prefix = None
         self.stores = []  # (addr, size, data)
         self.bbv = None
+        self.clpath = None
 
     def process_once(self, verbose=False, suffix='.1'):
         # reserve space for near_calls
@@ -452,6 +454,7 @@ class Checkpoint:
         if self.breakpoint is None:
             print(self.path_prefix, 'single pass')
             self.process_once()
+            self.verify()
             print(self.path_prefix, 'done')
             return
 
@@ -507,7 +510,19 @@ class Checkpoint:
         self.syscalls = new_syscalls
         self.pages = pages
         self.process_once(suffix='.2')
+        self.verify('.2')
         print(self.path_prefix, 'done')
+
+    def verify(self, suffix='.1'):
+        if self.clpath is not None:
+            print(self.path_prefix, 'verifying')
+            cmd = ['spike', 'pk', self.clpath,
+                   self.path_prefix + suffix + '.cfg',
+                   self.path_prefix + suffix + '.dump']
+            p = Popen(cmd, stdout=DEVNULL, stderr=DEVNULL)
+            if p.wait():
+                print('\n\tspike return %d: %s\n' % (
+                    p.returncode, self.path_prefix + suffix))
 
     def make_replay_table(self):
         buf = []
@@ -546,7 +561,7 @@ class Checkpoint:
         return os.path.exists(cfgpath) and os.path.exists(dumppath)
 
 
-def main(logpath, execpath, rebuild):
+def main(logpath, execpath, rebuild, verify):
     '''
     Log types:
         begin <addr>
@@ -566,6 +581,7 @@ def main(logpath, execpath, rebuild):
     dumpfile = None
     children = set()  # pid
     bbv = BBVBase(execpath) if execpath else None
+    clpath = os.path.join(SRC_DIR, 'cl') if verify else None
 
     def submit_task():
         if cur is None:
@@ -608,6 +624,7 @@ def main(logpath, execpath, rebuild):
             cur = Checkpoint()
             cur.entry_pc = int(tokens[1], 16)
             cur.bbv = bbv
+            cur.clpath = clpath
 
         elif tokens[0] in {'ireg', 'freg'}:
             for val in tokens[1:]:
@@ -678,6 +695,6 @@ def main(logpath, execpath, rebuild):
 if __name__ == '__main__':
     args = parser.parse_args()
     try:
-        main(args.path, args.exec, args.rebuild)
+        main(args.path, args.exec, args.rebuild, args.verify)
     except KeyboardInterrupt:
         pass
