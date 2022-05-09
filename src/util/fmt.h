@@ -174,16 +174,22 @@ namespace riscv {
 		uint8_t visited[512];
 		uint8_t content[4096];
 
-		int A(int offs) { return (offs >> 3) & 0x1ff; }
-		int B(int offs) { return 1 << (offs & 7); }
-
-		bool is_visited(int offs) {
-			return visited[A(offs)] & B(offs);
+		template <typename T>
+		int check(int offset) {
+			int mask = (1 << sizeof(T)) - 1;
+			return (visited[offset >> 3] >> (offset & 7)) & mask;
 		}
 
-		void put(int offs, uint8_t val) {
-			visited[A(offs)] |= B(offs);
-			content[offs] = val;
+		template <typename T>
+		void set(int offset) {
+			int mask = (1 << sizeof(T)) - 1;
+			visited[offset >> 3] |= mask << (offset & 7);
+		}
+
+		template <typename T>
+		void put(int offset, T data) {
+			set<T>(offset);
+			*(T *)(content + offset) = data;
 		}
 
 		PageRec() { memset(this, 0, sizeof(PageRec)); }
@@ -221,6 +227,15 @@ namespace riscv {
 			return page;
 		}
 
+		PageRec* get_page_init(uint64_t pn) {
+			PageRec *&page = pages[pn];
+			if (page == NULL) {
+				page = new PageRec;
+				memcpy(page->content, (void *)(pn << 12), 4096);
+			}
+			return page;
+		}
+
 		uint32_t &get_exec_counter(uint64_t addr) {
 			ExecRec *&exec = execs[addr >> 12];
 			if (exec == NULL) {
@@ -230,53 +245,67 @@ namespace riscv {
 		}
 
 		bool fetch(uint64_t addr, uint64_t inst, int length) {
-			PageRec *page = NULL;
-			uint64_t pn = 0;
-			bool first_visit = true;
-			for (int i = 0; i < length; i++) {
-				if (!page || (addr + i) >> 12 != pn) {
-					pn = (addr + i) >> 12;
-					page = get_page(pn);
-				}
-				if (page->is_visited((addr + i) & 0xfff)) {
-					first_visit = false;
-				} else {
-					page->put((addr + i) & 0xfff, (inst >> (i * 8)) & 0xff);
-				}
-			}
 			get_exec_counter(addr)++;
-			return first_visit;
+			// to accelerate fetch, page content is set on init
+			PageRec *page = get_page_init(addr >> 12);
+			int offset = addr & 0xfff;
+			if (length == 2) {
+				bool first = page->check<uint16_t>(offset) == 0;
+				page->set<uint16_t>(offset);
+				return first;
+			}
+			if ((addr & 3) < 6) {
+				bool first = page->check<uint32_t>(offset) == 0;
+				page->set<uint32_t>(offset);
+				return first;
+			}
+			bool first1 = page->check<uint16_t>(offset) == 0;
+			page->set<uint16_t>(offset);
+			if (offset + 2 == 4096) {
+				page = get_page_init((addr >> 12) + 1);
+			}
+			bool first2 = page->check<uint16_t>(offset + 2) == 0;
+			page->set<uint16_t>(offset + 2);
+			return first1 && first2;
 		}
 
 		bool prefetch(uint64_t addr, int length) {
-			PageRec *page = NULL;
-			uint64_t pn = 0;
-			for (int i = 0; i < length; i++) {
-				if (!page || (addr + i) >> 12 != pn) {
-					pn = (addr + i) >> 12;
-					page = get_page(pn);
-				}
-				if (page->is_visited((addr + i) & 0xfff)) {
-					return false;
-				}
+			PageRec *page = get_page(addr >> 12);
+			int offset = addr & 0xfff;
+			switch (length) {
+				case 2:
+					return page->check<uint16_t>(offset) == 0;
 			}
-			return true;
+			return false;
 		}
 
 		template <typename T>
 		void load(uint64_t addr, T data) {
-			PageRec *page = NULL;
-			uint64_t pn = 0;
-			union { uint64_t xu; T t; } ud = { .t = data };
-			for (size_t i = 0; i < sizeof(T); i++) {
-				if (!page || (addr + i) >> 12 != pn) {
-					pn = (addr + i) >> 12;
-					page = get_page(pn);
-				}
-				if (!page->is_visited((addr + i) & 0xfff)) {
-					page->put((addr + i) & 0xfff, (ud.xu >> (i * 8)) & 0xff);
+			uint64_t pn = addr >> 12;
+			PageRec *page = get_page(pn);
+			int offset = addr & 0xfff;
+			// perform a coalesced put if it's aligned and complete
+			if ((offset & (sizeof(T) - 1)) == 0) {
+				switch (page->check<T>(offset)) {
+					case 0:
+						page->put(offset, data);
+						return;
+					case (1 << sizeof(T)) - 1:
+						return;
 				}
 			}
+			// otherwise, put it byte by byte
+			union { char b[8]; T t; } x = { .t = data };
+			for (int i = 0; i < (int)sizeof(T); i++) {
+				if (offset + i == 4096) {
+					page = get_page(pn + 1);
+					offset -= 4096;
+				}
+				if (page->check<char>(offset + i) == 0) {
+					page->put(offset + i, x.b[i]);
+				}
+			}
+			return;
 		}
 
 		template <typename T>
