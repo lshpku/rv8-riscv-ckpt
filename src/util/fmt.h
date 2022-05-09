@@ -200,7 +200,7 @@ namespace riscv {
 		uint32_t count[2048];
 
 		uint32_t &get(int offs) {
-			return count[(offs >> 1) & 0x7ff];
+			return count[offs >> 1];
 		}
 
 		ExecRec() { memset(this, 0, sizeof(ExecRec)); }
@@ -210,7 +210,15 @@ namespace riscv {
 		uint64_t addr;
 		unsigned size;
 
-		StoreRec() { memset(this, 0, sizeof(StoreRec)); }
+		StoreRec() : addr(0), size(0) {}
+	};
+
+	template <class P>
+	struct PtrCache {
+		uint64_t idx;
+		P *ptr;
+
+		PtrCache() : idx(0), ptr(NULL) {}
 	};
 
 	struct MemTrace {
@@ -218,6 +226,8 @@ namespace riscv {
 		std::unordered_map<uint64_t, ExecRec *> execs;
 		enum { STREC_SIZE = 256 };
 		StoreRec stores[STREC_SIZE];
+		PtrCache<PageRec> fetch_cache, load_cache;
+		PtrCache<ExecRec> exec_cache;
 
 		PageRec* get_page(uint64_t pn) {
 			PageRec *&page = pages[pn];
@@ -227,12 +237,29 @@ namespace riscv {
 			return page;
 		}
 
-		uint32_t &get_exec_counter(uint64_t addr) {
-			ExecRec *&exec = execs[addr >> 12];
+		PageRec* get_page(uint64_t pn, PtrCache<PageRec> &cache) {
+			if (pn != cache.idx) {
+				cache.idx = pn;
+				cache.ptr = get_page(pn);
+			}
+			return cache.ptr;
+		}
+
+		ExecRec* get_exec(uint64_t pn) {
+			ExecRec *&exec = execs[pn];
 			if (exec == NULL) {
 				exec = new ExecRec;
 			}
-			return exec->get(addr & 0xfff);
+			return exec;
+		}
+
+		uint32_t &get_exec_counter(uint64_t addr) {
+			uint64_t pn = addr >> 12;
+			if (pn != exec_cache.idx) {
+				exec_cache.idx = pn;
+				exec_cache.ptr = get_exec(pn);
+			}
+			return exec_cache.ptr->get(addr & 0xfff);
 		}
 
 		template <typename T>
@@ -255,7 +282,8 @@ namespace riscv {
 
 		bool fetch(uint64_t addr, uint64_t inst, int length) {
 			get_exec_counter(addr)++;
-			PageRec *page = get_page(addr >> 12);
+			uint64_t pn = addr >> 12;
+			PageRec *page = get_page(pn, fetch_cache);
 			int offset = addr & 0xfff;
 			// fetch is expected to be 2-aligned, even for 4-byte insts
 			if (length == 2) {
@@ -266,7 +294,7 @@ namespace riscv {
 			}
 			bool first1 = fetch(page, offset, (uint16_t)inst);
 			if (offset + 2 == 4096) {
-				page = get_page((addr >> 12) + 1);
+				page = get_page(pn + 1, fetch_cache);
 				offset -= 4096;
 			}
 			bool first2 = fetch(page, offset + 2, (uint16_t)(inst >> 16));
@@ -274,7 +302,7 @@ namespace riscv {
 		}
 
 		bool prefetch(uint64_t addr, int length) {
-			PageRec *page = get_page(addr >> 12);
+			PageRec *page = get_page(addr >> 12, fetch_cache);
 			int offset = addr & 0xfff;
 			switch (length) {
 				case 2:
@@ -286,7 +314,7 @@ namespace riscv {
 		template <typename T>
 		void load(uint64_t addr, T data) {
 			uint64_t pn = addr >> 12;
-			PageRec *page = get_page(pn);
+			PageRec *page = get_page(pn, load_cache);
 			int offset = addr & 0xfff;
 			// perform a coalesced put if it's aligned and complete
 			if ((offset & (sizeof(T) - 1)) == 0) {
@@ -302,7 +330,7 @@ namespace riscv {
 			union { char b[8]; T t; } x = { .t = data };
 			for (int i = 0; i < (int)sizeof(T); i++) {
 				if (offset + i == 4096) {
-					page = get_page(pn + 1);
+					page = get_page(pn + 1, load_cache);
 					offset -= 4096;
 				}
 				if (page->check<char>(offset + i) == 0) {
