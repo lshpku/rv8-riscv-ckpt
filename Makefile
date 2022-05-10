@@ -52,6 +52,8 @@ NOEXEC_FLAGS =  -Wl,-z,noexecstack
 # default optimizer, debug and warning flags
 TOP_DIR =       $(shell pwd)
 ASMJIT_SRC_DIR = third_party/asmjit/src
+SPIKE_SRC_DIR = third_party/spike
+SOFTFLOAT_SRC_DIR = $(SPIKE_SRC_DIR)/softfloat
 INCLUDES :=     -I$(TOP_DIR)/src/abi \
                 -I$(TOP_DIR)/src/asm \
                 -I$(TOP_DIR)/src/elf \
@@ -64,7 +66,8 @@ INCLUDES :=     -I$(TOP_DIR)/src/abi \
                 -I$(TOP_DIR)/src/model \
                 -I$(TOP_DIR)/src/rom \
                 -I$(TOP_DIR)/src/util \
-                -I$(TOP_DIR)/$(ASMJIT_SRC_DIR)/asmjit
+                -I$(TOP_DIR)/$(ASMJIT_SRC_DIR)/asmjit \
+                -I$(TOP_DIR)/$(SOFTFLOAT_SRC_DIR)
 OPT_FLAGS =     -O3 -fwrapv
 DEBUG_FLAGS =   -g
 WARN_FLAGS =    -Wall -Wsign-compare -Wno-deprecated-declarations -Wno-strict-aliasing
@@ -180,6 +183,7 @@ cxx_src_objs =  $(subst $(SRC_DIR),$(OBJ_DIR),$(subst .cc,.o,$(1)))
 cxx_src_deps =  $(subst $(SRC_DIR),$(DEP_DIR),$(subst .cc,.cc.P,$(1)))
 cc_src_objs =   $(subst $(SRC_DIR),$(OBJ_DIR),$(subst .c,.o,$(1)))
 cc_src_deps =   $(subst $(SRC_DIR),$(DEP_DIR),$(subst .c,.c.P,$(1)))
+softfloat_src_objs = $(subst $(SPIKE_SRC_DIR),$(OBJ_DIR),$(subst .c,.o,$(1)))
 
 # riscv meta data
 RV_META_DATA =  $(META_DIR)/codecs \
@@ -632,6 +636,28 @@ $(MMAP_LINUX_LIB): $(MMAP_LINUX_OBJS)
 	@mkdir -p $(@D) ;
 	$(call cmd, SOLIB $@, $(CC) $(MMAP_LINUX_LDFLAGS) -o $@ $^ -ldl)
 
+# spike softfloat
+
+SOFTFLOAT_SRCS = $(wildcard $(SOFTFLOAT_SRC_DIR)/*.c)
+SOFTFLOAT_OBJ_DIR = $(OBJ_DIR)/softfloat
+SOFTFLOAT_OBJS = $(call softfloat_src_objs, $(SOFTFLOAT_SRCS))
+SOFTFLOAT_LIB = $(LIB_DIR)/softfloat.a
+SOFTFLOAT_FLAGS = -Wall -Wno-unused -g -O2 -fPIC -I$(SOFTFLOAT_OBJ_DIR)
+
+$(SOFTFLOAT_OBJ_DIR)/config.h: $(SPIKE_SRC_DIR)/config.h.in
+	@mkdir -p $(SOFTFLOAT_OBJ_DIR)
+	$(call cmd, CONFIG $@, cp $< $@)
+
+$(SOFTFLOAT_OBJ_DIR)/%.o: $(SOFTFLOAT_SRC_DIR)/%.c $(SOFTFLOAT_OBJ_DIR)/config.h
+	$(call cmd, CC $@, $(CC) $(SOFTFLOAT_FLAGS) -c -o $@ $<)
+
+$(SOFTFLOAT_LIB): $(SOFTFLOAT_OBJS)
+	$(call cmd, AR $@, $(AR) rcs $@ $^)
+
+softfloat: $(SOFTFLOAT_LIB)
+softfloat_clean:
+	rm -rf $(SOFTFLOAT_OBJ_DIR) $(SOFTFLOAT_LIB)
+
 # binary targets
 
 $(RV_META_BIN): $(RV_META_OBJS) $(RV_MODEL_LIB) $(RV_GEN_LIB) $(RV_UTIL_LIB)
@@ -646,7 +672,7 @@ $(RV_JIT_BIN): $(RV_JIT_OBJS) $(RV_ASM_LIB) $(RV_ELF_LIB) $(RV_UTIL_LIB) $(ASMJI
 	@mkdir -p $(@D) ;
 	$(call cmd, LD $@, $(LD) $^ $(LDFLAGS) $(MMAP_FLAGS) -o $@)
 
-$(RV_SIM_BIN): $(RV_SIM_OBJS) $(RV_ASM_LIB) $(RV_ELF_LIB) $(RV_UTIL_LIB) $(MMAP_LIB)
+$(RV_SIM_BIN): $(RV_SIM_OBJS) $(RV_ASM_LIB) $(RV_ELF_LIB) $(RV_UTIL_LIB) $(MMAP_LIB) $(SOFTFLOAT_LIB)
 	@mkdir -p $(@D) ;
 	$(call cmd, LD $@, $(LD) $^ $(LDFLAGS) $(MMAP_FLAGS) -o $@)
 
