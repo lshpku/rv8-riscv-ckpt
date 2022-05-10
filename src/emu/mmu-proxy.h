@@ -37,7 +37,7 @@ namespace riscv {
 
 		enum : addr_t {
 			memory_top = 0x80000000, // (sizeof(UX) == 4 ? 0x80000000 : 0x7f0000000000),
-			stack_size = 0x100000 // 1 MiB
+			stack_size = 0x800000 // 8 MiB
 		};
 
 		memory_type mem;
