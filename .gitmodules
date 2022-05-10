@@ -10,3 +10,6 @@
 [submodule "ckpt/FastLZ"]
 	path = ckpt/FastLZ
 	url = https://github.com/ariya/FastLZ.git
+[submodule "third_party/spike"]
+	path = third_party/spike
+	url = https://github.com/riscv-software-src/riscv-isa-sim.git
