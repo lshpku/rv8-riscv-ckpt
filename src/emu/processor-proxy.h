@@ -362,18 +362,12 @@ namespace riscv {
 			u32 fcsr_mask     = 0xff;
 
 			switch (csr) {
-				case rv_csr_fflags:   fenv_getflags(P::fcsr);
-				                      P::set_csr(dec, rv_mode_U, op, csr, P::fcsr, value,
-				                                fflags_mask, fflags_mask);
-				                      fenv_clearflags(P::fcsr);                                  break;
+				case rv_csr_fflags:   P::set_csr(dec, rv_mode_U, op, csr, P::fcsr, value,
+				                                 fflags_mask, fflags_mask);                      break;
 				case rv_csr_frm:      P::set_csr(dec, rv_mode_U, op, csr, P::fcsr, value,
-				                                 frm_mask, frm_mask, /* shift >> */ 5);
-				                      fenv_setrm((P::fcsr >> 5) & 0x7);                          break;
-				case rv_csr_fcsr:     fenv_getflags(P::fcsr);
-				                      P::set_csr(dec, rv_mode_U, op, csr, P::fcsr, value,
-				                                 fcsr_mask, fcsr_mask);
-				                      fenv_clearflags(P::fcsr);
-				                      fenv_setrm((P::fcsr >> 5) & 0x7);                          break;
+				                                 frm_mask, frm_mask, /* shift >> */ 5);          break;
+				case rv_csr_fcsr:     P::set_csr(dec, rv_mode_U, op, csr, P::fcsr, value,
+				                                 fcsr_mask, fcsr_mask);                          break;
 				case rv_csr_cycle:    P::get_csr(dec, rv_mode_U, op, csr, P::instret, value);    break;
 				case rv_csr_time:     P::time = cpu_cycle_clock();
 				                      P::get_csr(dec, rv_mode_U, op, csr, P::time, value);       break;

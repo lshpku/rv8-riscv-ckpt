@@ -7,6 +7,25 @@
 #ifndef rv_interp_h
 #define rv_interp_h
 
+#define F32_SIGN (1 << 31)
+#define F64_SIGN (1ULL << 63)
+
+#define box(a) ((-1ULL << 32) | a)
+#define box32(a) box(a.v)
+#define box64(a) a.v
+#define unbox(a) ((u32)(a >> 32) + 1 == 0 ? (u32)a : 0x7FC00000U)
+#define unbox32(a) (float32_t){unbox(a)}
+#define unbox64(a) (float64_t){a}
+#define xu(i) proc.freg[dec.i].r.xu.val
+#define wu(i) proc.freg[dec.i].r.wu.val
+#define setrm() softfloat_roundingMode = dec.rm == 0b111 ? (proc.fcsr >> 5) & 0b111 : dec.rm
+#define setff() proc.fcsr |= softfloat_exceptionFlags; softfloat_exceptionFlags = 0
+
+#define inv32(a) (float32_t){a.v ^ F32_SIGN}
+#define inv64(a) (float64_t){a.v ^ F64_SIGN}
+#define fsgnj32(a, b, n, x) (float32_t){(a.v & ~F32_SIGN) | (((x ? a.v : n ? F32_SIGN : 0) ^ b.v) & F32_SIGN)}
+#define fsgnj64(a, b, n, x) (float64_t){(a.v & ~F64_SIGN) | (((x ? a.v : n ? F64_SIGN : 0) ^ b.v) & F64_SIGN)}
+
 /* Execute Instruction RV32 */
 
 template <bool rvi, bool rvm, bool rva, bool rvs, bool rvf, bool rvd, bool rvq, bool rvc, typename T, typename P>
@@ -996,312 +1015,312 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_flw:
 			if (rvf) {
-				u32 t; proc.mmu.template load<P,u32>(proc, proc.ireg[dec.rs1] + dec.imm, t); proc.freg[dec.rd].r.wu.val = t;
+				u32 t; proc.mmu.template load<P,u32>(proc, proc.ireg[dec.rs1] + dec.imm, t); xu(rd) = box(t);
 			};
 			break;
 		case rv_op_fsw:
 			if (rvf) {
-				proc.mmu.template store<P,f32>(proc, proc.ireg[dec.rs1] + dec.imm, proc.freg[dec.rs2].r.s.val);
+				proc.mmu.template store<P,u32>(proc, proc.ireg[dec.rs1] + dec.imm, wu(rs2));
 			};
 			break;
 		case rv_op_fmadd_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val + proc.freg[dec.rs3].r.s.val;
+				setrm(); xu(rd) = box32(f32_mulAdd(unbox32(xu(rs1)), unbox32(xu(rs2)), unbox32(xu(rs3)))); setff();
 			};
 			break;
 		case rv_op_fmsub_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val - proc.freg[dec.rs3].r.s.val;
+				setrm(); xu(rd) = box32(f32_mulAdd(unbox32(xu(rs1)), unbox32(xu(rs2)), inv32(unbox32(xu(rs3))))); setff();
 			};
 			break;
 		case rv_op_fnmsub_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * -proc.freg[dec.rs2].r.s.val + proc.freg[dec.rs3].r.s.val;
+				setrm(); xu(rd) = box32(f32_mulAdd(inv32(unbox32(xu(rs1))), unbox32(xu(rs2)), unbox32(xu(rs3)))); setff();
 			};
 			break;
 		case rv_op_fnmadd_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * -proc.freg[dec.rs2].r.s.val - proc.freg[dec.rs3].r.s.val;
+				setrm(); xu(rd) = box32(f32_mulAdd(inv32(unbox32(xu(rs1))), unbox32(xu(rs2)), inv32(unbox32(xu(rs3))))); setff();
 			};
 			break;
 		case rv_op_fadd_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val + proc.freg[dec.rs2].r.s.val;
+				setrm(); xu(rd) = box32(f32_add(unbox32(xu(rs1)), unbox32(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fsub_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val - proc.freg[dec.rs2].r.s.val;
+				setrm(); xu(rd) = box32(f32_sub(unbox32(xu(rs1)), unbox32(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fmul_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val * proc.freg[dec.rs2].r.s.val;
+				setrm(); xu(rd) = box32(f32_mul(unbox32(xu(rs1)), unbox32(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fdiv_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = proc.freg[dec.rs1].r.s.val / proc.freg[dec.rs2].r.s.val;
+				setrm(); xu(rd) = box32(f32_div(unbox32(xu(rs1)), unbox32(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fsgnj_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = (proc.freg[dec.rs1].r.wu.val & u32(~(1U<<31))) | (proc.freg[dec.rs2].r.wu.val & u32(1U<<31));
+				xu(rd) = box32(fsgnj32(unbox32(xu(rs1)), unbox32(xu(rs2)), false, false));
 			};
 			break;
 		case rv_op_fsgnjn_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = (proc.freg[dec.rs1].r.wu.val & u32(~(1U<<31))) | (~proc.freg[dec.rs2].r.wu.val & u32(1U<<31));
+				xu(rd) = box32(fsgnj32(unbox32(xu(rs1)), unbox32(xu(rs2)), true, false));
 			};
 			break;
 		case rv_op_fsgnjx_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = proc.freg[dec.rs1].r.wu.val ^ (proc.freg[dec.rs2].r.wu.val & u32(1U<<31));
+				xu(rd) = box32(fsgnj32(unbox32(xu(rs1)), unbox32(xu(rs2)), false, true));
 			};
 			break;
 		case rv_op_fmin_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.s.val = (proc.freg[dec.rs1].r.s.val < proc.freg[dec.rs2].r.s.val) || std::isnan(proc.freg[dec.rs2].r.s.val) ? proc.freg[dec.rs1].r.s.val : proc.freg[dec.rs2].r.s.val;
+				xu(rd) = box32(f32_min(unbox32(xu(rs1)), unbox32(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fmax_s:
 			if (rvf) {
-				proc.freg[dec.rd].r.s.val = (proc.freg[dec.rs1].r.s.val > proc.freg[dec.rs2].r.s.val) || std::isnan(proc.freg[dec.rs2].r.s.val) ? proc.freg[dec.rs1].r.s.val : proc.freg[dec.rs2].r.s.val;
+				xu(rd) = box32(f32_max(unbox32(xu(rs1)), unbox32(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fsqrt_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = riscv::f32_sqrt(proc.freg[dec.rs1].r.s.val);
+				setrm(); xu(rd) = box32(f32_sqrt(unbox32(xu(rs1)))); setff();
 			};
 			break;
 		case rv_op_fle_s:
 			if (rvf) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.freg[dec.rs1].r.s.val <= proc.freg[dec.rs2].r.s.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_le(unbox32(xu(rs1)), unbox32(xu(rs2))); setff();
 			};
 			break;
 		case rv_op_flt_s:
 			if (rvf) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.freg[dec.rs1].r.s.val < proc.freg[dec.rs2].r.s.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_lt(unbox32(xu(rs1)), unbox32(xu(rs2))); setff();
 			};
 			break;
 		case rv_op_feq_s:
 			if (rvf) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.freg[dec.rs1].r.s.val == proc.freg[dec.rs2].r.s.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_eq(unbox32(xu(rs1)), unbox32(xu(rs2))); setff();
 			};
 			break;
 		case rv_op_fcvt_w_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_w(proc.fcsr, proc.freg[dec.rs1].r.s.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : (s32)f32_to_i32(unbox32(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_wu_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_wu(proc.fcsr, proc.freg[dec.rs1].r.s.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : (s32)f32_to_ui32(unbox32(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_s_w:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.w.val);
+				setrm(); xu(rd) = box32(i32_to_f32(proc.ireg[dec.rs1].r.w.val)); setff();
 			};
 			break;
 		case rv_op_fcvt_s_wu:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.wu.val);
+				setrm(); xu(rd) = box32(ui32_to_f32(proc.ireg[dec.rs1].r.wu.val)); setff();
 			};
 			break;
 		case rv_op_fmv_x_s:
 			if (rvf) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : std::isnan(proc.freg[dec.rs1].r.s.val) ? s32(0x7fc00000) : proc.freg[dec.rs1].r.w.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : (s32)wu(rs1);
 			};
 			break;
 		case rv_op_fclass_s:
 			if (rvf) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_classify(proc.freg[dec.rs1].r.s.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_classify(unbox32(xu(rs1)));
 			};
 			break;
 		case rv_op_fmv_s_x:
 			if (rvf) {
-				proc.freg[dec.rd].r.wu.val = proc.ireg[dec.rs1].r.wu.val;
+				xu(rd) = box(proc.ireg[dec.rs1].r.wu.val);
 			};
 			break;
 		case rv_op_fcvt_l_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_l(proc.fcsr, proc.freg[dec.rs1].r.s.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_to_i64(unbox32(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_lu_s:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_lu(proc.fcsr, proc.freg[dec.rs1].r.s.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f32_to_ui64(unbox32(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_s_l:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.l.val);
+				setrm(); xu(rd) = box32(i64_to_f32(proc.ireg[dec.rs1].r.l.val)); setff();
 			};
 			break;
 		case rv_op_fcvt_s_lu:
 			if (rvf) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.ireg[dec.rs1].r.lu.val);
+				setrm(); xu(rd) = box32(ui64_to_f32(proc.ireg[dec.rs1].r.lu.val)); setff();
 			};
 			break;
 		case rv_op_fld:
 			if (rvd) {
-				u64 t; proc.mmu.template load<P,u64>(proc, proc.ireg[dec.rs1] + dec.imm, t); proc.freg[dec.rd].r.lu.val = t;
+				u64 t; proc.mmu.template load<P,u64>(proc, proc.ireg[dec.rs1] + dec.imm, t); xu(rd) = t;
 			};
 			break;
 		case rv_op_fsd:
 			if (rvd) {
-				proc.mmu.template store<P,f64>(proc, proc.ireg[dec.rs1] + dec.imm, proc.freg[dec.rs2].r.d.val);
+				proc.mmu.template store<P,u64>(proc, proc.ireg[dec.rs1] + dec.imm, xu(rs2));
 			};
 			break;
 		case rv_op_fmadd_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val * proc.freg[dec.rs2].r.d.val + proc.freg[dec.rs3].r.d.val;
+				setrm(); xu(rd) = box64(f64_mulAdd(unbox64(xu(rs1)), unbox64(xu(rs2)), unbox64(xu(rs3)))); setff();
 			};
 			break;
 		case rv_op_fmsub_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val * proc.freg[dec.rs2].r.d.val - proc.freg[dec.rs3].r.d.val;
+				setrm(); xu(rd) = box64(f64_mulAdd(unbox64(xu(rs1)), unbox64(xu(rs2)), inv64(unbox64(xu(rs3))))); setff();
 			};
 			break;
 		case rv_op_fnmsub_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val * -proc.freg[dec.rs2].r.d.val + proc.freg[dec.rs3].r.d.val;
+				setrm(); xu(rd) = box64(f64_mulAdd(inv64(unbox64(xu(rs1))), unbox64(xu(rs2)), unbox64(xu(rs3)))); setff();
 			};
 			break;
 		case rv_op_fnmadd_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val * -proc.freg[dec.rs2].r.d.val - proc.freg[dec.rs3].r.d.val;
+				setrm(); xu(rd) = box64(f64_mulAdd(inv64(unbox64(xu(rs1))), unbox64(xu(rs2)), inv64(unbox64(xu(rs3))))); setff();
 			};
 			break;
 		case rv_op_fadd_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val + proc.freg[dec.rs2].r.d.val;
+				setrm(); xu(rd) = box64(f64_add(unbox64(xu(rs1)), unbox64(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fsub_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val - proc.freg[dec.rs2].r.d.val;
+				setrm(); xu(rd) = box64(f64_sub(unbox64(xu(rs1)), unbox64(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fmul_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val * proc.freg[dec.rs2].r.d.val;
+				setrm(); xu(rd) = box64(f64_mul(unbox64(xu(rs1)), unbox64(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fdiv_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = proc.freg[dec.rs1].r.d.val / proc.freg[dec.rs2].r.d.val;
+				setrm(); xu(rd) = box64(f64_div(unbox64(xu(rs1)), unbox64(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fsgnj_d:
 			if (rvd) {
-				proc.freg[dec.rd].r.lu.val = (proc.freg[dec.rs1].r.lu.val & u64(~(1ULL<<63))) | (proc.freg[dec.rs2].r.lu.val & u64(1ULL<<63));
+				xu(rd) = box64(fsgnj64(unbox64(xu(rs1)), unbox64(xu(rs2)), false, false));
 			};
 			break;
 		case rv_op_fsgnjn_d:
 			if (rvd) {
-				proc.freg[dec.rd].r.lu.val = (proc.freg[dec.rs1].r.lu.val & u64(~(1ULL<<63))) | (~proc.freg[dec.rs2].r.lu.val & u64(1ULL<<63));
+				xu(rd) = box64(fsgnj64(unbox64(xu(rs1)), unbox64(xu(rs2)), true, false));
 			};
 			break;
 		case rv_op_fsgnjx_d:
 			if (rvd) {
-				proc.freg[dec.rd].r.lu.val = proc.freg[dec.rs1].r.lu.val ^ (proc.freg[dec.rs2].r.lu.val & u64(1ULL<<63));
+				xu(rd) = box64(fsgnj64(unbox64(xu(rs1)), unbox64(xu(rs2)), false, true));
 			};
 			break;
 		case rv_op_fmin_d:
 			if (rvd) {
-				proc.freg[dec.rd].r.d.val = (proc.freg[dec.rs1].r.d.val < proc.freg[dec.rs2].r.d.val) || std::isnan(proc.freg[dec.rs2].r.d.val) ? proc.freg[dec.rs1].r.d.val : proc.freg[dec.rs2].r.d.val;
+				xu(rd) = box64(f64_min(unbox64(xu(rs1)), unbox64(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fmax_d:
 			if (rvd) {
-				proc.freg[dec.rd].r.d.val = (proc.freg[dec.rs1].r.d.val > proc.freg[dec.rs2].r.d.val) || std::isnan(proc.freg[dec.rs2].r.d.val) ? proc.freg[dec.rs1].r.d.val : proc.freg[dec.rs2].r.d.val;
+				xu(rd) = box64(f64_max(unbox64(xu(rs1)), unbox64(xu(rs2)))); setff();
 			};
 			break;
 		case rv_op_fcvt_s_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.s.val = f32(proc.freg[dec.rs1].r.d.val);
+				setrm(); xu(rd) = box32(f64_to_f32(unbox64(xu(rs1)))); setff();
 			};
 			break;
 		case rv_op_fcvt_d_s:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = f64(proc.freg[dec.rs1].r.s.val);
+				setrm(); xu(rd) = box64(f32_to_f64(unbox32(xu(rs1)))); setff();
 			};
 			break;
 		case rv_op_fsqrt_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = riscv::f64_sqrt(proc.freg[dec.rs1].r.d.val);
+				setrm(); xu(rd) = box64(f64_sqrt(unbox64(xu(rs1)))); setff();
 			};
 			break;
 		case rv_op_fle_d:
 			if (rvd) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.freg[dec.rs1].r.d.val <= proc.freg[dec.rs2].r.d.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_le(unbox64(xu(rs1)), unbox64(xu(rs2))); setff();
 			};
 			break;
 		case rv_op_flt_d:
 			if (rvd) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.freg[dec.rs1].r.d.val < proc.freg[dec.rs2].r.d.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_lt(unbox64(xu(rs1)), unbox64(xu(rs2))); setff();
 			};
 			break;
 		case rv_op_feq_d:
 			if (rvd) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.freg[dec.rs1].r.d.val == proc.freg[dec.rs2].r.d.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_eq(unbox64(xu(rs1)), unbox64(xu(rs2))); setff();
 			};
 			break;
 		case rv_op_fcvt_w_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_w(proc.fcsr, proc.freg[dec.rs1].r.d.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : (s32)f64_to_i32(unbox64(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_wu_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_wu(proc.fcsr, proc.freg[dec.rs1].r.d.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : (s32)f64_to_ui32(unbox64(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_d_w:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = f64(proc.ireg[dec.rs1].r.w.val);
+				setrm(); xu(rd) = box64(i32_to_f64(proc.ireg[dec.rs1].r.w.val)); setff();
 			};
 			break;
 		case rv_op_fcvt_d_wu:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = f64(proc.ireg[dec.rs1].r.wu.val);
+				setrm(); xu(rd) = box64(ui32_to_f64(proc.ireg[dec.rs1].r.wu.val)); setff();
 			};
 			break;
 		case rv_op_fclass_d:
 			if (rvd) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_classify(proc.freg[dec.rs1].r.d.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_classify(unbox64(xu(rs1)));
 			};
 			break;
 		case rv_op_fcvt_l_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_l(proc.fcsr, proc.freg[dec.rs1].r.d.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_to_i64(unbox64(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fcvt_lu_d:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::fcvt_lu(proc.fcsr, proc.freg[dec.rs1].r.d.val);
+				setrm(); proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : f64_to_ui64(unbox64(xu(rs1)), softfloat_roundingMode, true); setff();
 			};
 			break;
 		case rv_op_fmv_x_d:
 			if (rvd) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : std::isnan(proc.freg[dec.rs1].r.d.val) ? s64(0x7ff8000000000000ULL) : proc.freg[dec.rs1].r.l.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : xu(rs1);
 			};
 			break;
 		case rv_op_fcvt_d_l:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = f64(proc.ireg[dec.rs1].r.l.val);
+				setrm(); xu(rd) = box64(i64_to_f64(proc.ireg[dec.rs1].r.l.val)); setff();
 			};
 			break;
 		case rv_op_fcvt_d_lu:
 			if (rvd) {
-				fenv_setrm((proc.fcsr >> 5) & 0b111); proc.freg[dec.rd].r.d.val = f64(proc.ireg[dec.rs1].r.lu.val);
+				setrm(); xu(rd) = box64(ui64_to_f64(proc.ireg[dec.rs1].r.lu.val)); setff();
 			};
 			break;
 		case rv_op_fmv_d_x:
 			if (rvd) {
-				proc.freg[dec.rd].r.lu.val = proc.ireg[dec.rs1].r.lu.val;
+				xu(rd) = proc.ireg[dec.rs1].r.lu.val;
 			};
 			break;
 		default: return -1; /* illegal instruction */
