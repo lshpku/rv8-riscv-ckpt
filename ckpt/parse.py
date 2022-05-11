@@ -455,7 +455,6 @@ class Checkpoint:
             print(self.path_prefix, 'single pass')
             self.process_once()
             self.verify()
-            print(self.path_prefix, 'done')
             return
 
         # break with a repeating instruction
@@ -511,7 +510,6 @@ class Checkpoint:
         self.pages = pages
         self.process_once(suffix='.2')
         self.verify('.2')
-        print(self.path_prefix, 'done')
 
     def verify(self, suffix='.1'):
         if self.clpath is not None:
@@ -519,10 +517,19 @@ class Checkpoint:
             cmd = ['spike', 'pk', self.clpath,
                    self.path_prefix + suffix + '.cfg',
                    self.path_prefix + suffix + '.dump']
-            p = Popen(cmd, stdout=DEVNULL, stderr=DEVNULL)
+            p = Popen(cmd, stdin=DEVNULL, stdout=PIPE)
+            cause = b'\n'
+            while True:
+                line = p.stdout.readline()
+                if not line:
+                    break
+                cause = line
             if p.wait():
-                print('\n\tspike return %d: %s\n' % (
-                    p.returncode, self.path_prefix + suffix))
+                cause = cause.decode('utf-8')[:-1]
+                info = '[%d] %s' % (p.returncode, cause)
+                print(self.path_prefix, info)
+                return
+        print(self.path_prefix, 'done')
 
     def make_replay_table(self):
         buf = []
