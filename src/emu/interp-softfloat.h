@@ -26,6 +26,9 @@
 #define fsgnj32(a, b, n, x) (float32_t){(a.v & ~F32_SIGN) | (((x ? a.v : n ? F32_SIGN : 0) ^ b.v) & F32_SIGN)}
 #define fsgnj64(a, b, n, x) (float64_t){(a.v & ~F64_SIGN) | (((x ? a.v : n ? F64_SIGN : 0) ^ b.v) & F64_SIGN)}
 
+typedef __int128 int128_t;
+typedef unsigned __int128 uint128_t;
+
 /* Execute Instruction RV32 */
 
 template <bool rvi, bool rvm, bool rva, bool rvs, bool rvf, bool rvd, bool rvq, bool rvc, typename T, typename P>
@@ -845,37 +848,37 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_mulh:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::mulh(proc.ireg[dec.rs1].r.x.val, proc.ireg[dec.rs2].r.x.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : ((int128_t)proc.ireg[dec.rs1].r.x.val * proc.ireg[dec.rs2].r.x.val) >> 64;
 			};
 			break;
 		case rv_op_mulhsu:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::mulhsu(proc.ireg[dec.rs1].r.x.val, proc.ireg[dec.rs2].r.xu.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : ((int128_t)proc.ireg[dec.rs1].r.x.val * (uint128_t)proc.ireg[dec.rs2].r.xu.val) >> 64;
 			};
 			break;
 		case rv_op_mulhu:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::mulhu(proc.ireg[dec.rs1].r.xu.val, proc.ireg[dec.rs2].r.xu.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : ((uint128_t)proc.ireg[dec.rs1].r.xu.val * proc.ireg[dec.rs2].r.xu.val) >> 64;
 			};
 			break;
 		case rv_op_div:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs1].r.x.val == std::numeric_limits<sx>::min() && proc.ireg[dec.rs2].r.x.val == -1 ? std::numeric_limits<sx>::min() : proc.ireg[dec.rs2].r.x.val == 0 ? -1 : proc.ireg[dec.rs1].r.x.val / proc.ireg[dec.rs2].r.x.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::div(proc.ireg[dec.rs1].r.x.val, proc.ireg[dec.rs2].r.x.val);
 			};
 			break;
 		case rv_op_divu:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs2].r.x.val == 0 ? -1 : sx(proc.ireg[dec.rs1].r.xu.val / proc.ireg[dec.rs2].r.xu.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::divu(proc.ireg[dec.rs1].r.xu.val, proc.ireg[dec.rs2].r.xu.val);
 			};
 			break;
 		case rv_op_rem:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs1].r.x.val == std::numeric_limits<sx>::min() && proc.ireg[dec.rs2].r.x.val == -1 ? 0 : proc.ireg[dec.rs2].r.x.val == 0 ? proc.ireg[dec.rs1].r.x.val : proc.ireg[dec.rs1].r.x.val % proc.ireg[dec.rs2].r.x.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::rem(proc.ireg[dec.rs1].r.x.val, proc.ireg[dec.rs2].r.x.val);
 			};
 			break;
 		case rv_op_remu:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs2].r.x.val == 0 ? proc.ireg[dec.rs1].r.x.val : sx(proc.ireg[dec.rs1].r.xu.val % proc.ireg[dec.rs2].r.xu.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::remu(proc.ireg[dec.rs1].r.xu.val, proc.ireg[dec.rs2].r.xu.val);
 			};
 			break;
 		case rv_op_mulw:
@@ -885,22 +888,22 @@ typename P::ux exec_inst_rv64(T &dec, P &proc, typename P::ux pc_offset)
 			break;
 		case rv_op_divw:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs1].r.w.val == std::numeric_limits<s32>::min() && proc.ireg[dec.rs2].r.w.val == -1 ? std::numeric_limits<s32>::min() : proc.ireg[dec.rs2].r.w.val == 0 ? -1 : proc.ireg[dec.rs1].r.w.val / proc.ireg[dec.rs2].r.w.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::div(proc.ireg[dec.rs1].r.w.val, proc.ireg[dec.rs2].r.w.val);
 			};
 			break;
 		case rv_op_divuw:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs2].r.w.val == 0 ? -1 : s32(proc.ireg[dec.rs1].r.wu.val / proc.ireg[dec.rs2].r.wu.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::divu(proc.ireg[dec.rs1].r.wu.val, proc.ireg[dec.rs2].r.wu.val);
 			};
 			break;
 		case rv_op_remw:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs1].r.w.val == std::numeric_limits<s32>::min() && proc.ireg[dec.rs2].r.w.val == -1 ? 0 : proc.ireg[dec.rs2].r.w.val == 0 ? proc.ireg[dec.rs1].r.w.val : proc.ireg[dec.rs1].r.w.val % proc.ireg[dec.rs2].r.w.val;
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::rem(proc.ireg[dec.rs1].r.w.val, proc.ireg[dec.rs2].r.w.val);
 			};
 			break;
 		case rv_op_remuw:
 			if (rvm) {
-				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : proc.ireg[dec.rs2].r.w.val == 0 ? proc.ireg[dec.rs1].r.w.val : s32(proc.ireg[dec.rs1].r.wu.val % proc.ireg[dec.rs2].r.wu.val);
+				proc.ireg[dec.rd] = (dec.rd == 0) ? 0 : riscv::remu(proc.ireg[dec.rs1].r.wu.val, proc.ireg[dec.rs2].r.wu.val);
 			};
 			break;
 		case rv_op_lr_w:
