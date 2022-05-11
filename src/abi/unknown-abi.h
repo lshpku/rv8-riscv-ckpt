@@ -907,6 +907,7 @@ namespace riscv {
 			printf("times(0x%lx) = %ld\n",
 				(long)proc.ireg[rv_ireg_a0], (long)ret);
 		}
+		checkpoint.syscall(ret, guest_tms, sizeof(*guest_tms));
 		proc.ireg[rv_ireg_a0] = ret;
 	}
 

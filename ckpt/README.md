@@ -228,4 +228,5 @@ Checkpoint原理介绍
 | write |
 | close |
 | clock_gettime | Y
+| times | Y
 | exit |
