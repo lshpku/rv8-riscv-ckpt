@@ -108,7 +108,7 @@ int main(int argc, char *argv[])
         return -1;
     }
     memcpy(cl_p, cl_begin, cl_size);
-    asm volatile("fence.i");
+    __flush_icache();
     printf("map cl to %p-%p\n", cl_p, cl_p + cl_map_size - 1);
 
     // map mmap_cfgs

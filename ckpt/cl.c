@@ -17,9 +17,9 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
             if ((long)addr < 0) {
                 RAW_PANIC("mmap file failed");
             }
-            // force OS to allocate private pages by reading and
-            // writing one word of it, in case the copy-on-write
-            // handling happens during execution
+            // force OS to allocate a private page, in case the program
+            // writes to the page and triggers a copy-on-write handling
+            // during execution
             for (uint64_t i = 0; i < mc_i->size; i += 4096) {
                 volatile long *p = addr + i;
                 *p = *p;
@@ -46,5 +46,6 @@ void map_pages(void *mc_p, int mc_num, int md_fd)
     }
 
     raw_close(md_fd);
+    __flush_icache();
     RAW_LOG("begin execution");
 }

@@ -17,4 +17,9 @@ typedef struct {
 
 #define ALIGN_PAGE(a) (((a) + 0xfff) & ~0xfff)
 
+inline void __flush_icache()
+{
+    asm volatile("fence.i");
+}
+
 #endif
