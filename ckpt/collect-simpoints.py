@@ -1,9 +1,12 @@
 import os
+import shutil
 import argparse
 from subprocess import Popen, DEVNULL
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
+parser.add_argument('-C', '--compress', action='store_true')
+parser.add_argument('-O', '--output-dir', default='simpoints')
 
 srcdir = os.path.dirname(os.path.abspath(__file__))
 comppath = os.path.join(srcdir, 'compress.py')
@@ -15,6 +18,10 @@ if __name__ == '__main__':
     logname = os.path.basename(args.path)
     if destdir:
         os.chdir(destdir)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    def output_path(name):
+        return os.path.join(args.output_dir, name)
 
     print('reading log')
     dump_names = []
@@ -46,34 +53,36 @@ if __name__ == '__main__':
         else:
             picked_names.append(name + '.1')
 
-    print('compressing')
-    for name in picked_names:
-        cmd = ['python3', comppath, name + '.cfg', name + '.dump']
-        p = Popen(cmd, stdout=DEVNULL)
-        if p.wait():
-            exit(p.returncode)
-
-    print('copying checkpoints')
-    os.makedirs('simpoints', exist_ok=True)
-    for name in picked_names:
-        os.rename(name + '.c.cfg', 'simpoints/' + name + '.c.cfg')
-        os.rename(name + '.c.dump', 'simpoints/' + name + '.c.dump')
+    if args.compress:
+        print('compressing')
+        for name in picked_names:
+            cmd = ['python3', comppath, name + '.cfg', name + '.dump']
+            p = Popen(cmd, stdout=DEVNULL)
+            if p.wait():
+                exit(p.returncode)
+            os.rename(name + '.c.cfg', output_path(name + '.c.cfg'))
+            os.rename(name + '.c.dump', output_path(name + '.c.dump'))
+        picked_names = list(map(lambda s: s + '.c', picked_names))
+    else:
+        for name in picked_names:
+            shutil.copy(name + '.cfg', output_path(name + '.cfg'))
+            shutil.copy(name + '.dump', output_path(name + '.dump'))
 
     print('generating run script')
-    with open('simpoints/run.sh', 'w') as f:
+    os.chdir(args.output_dir)
+    with open('run.sh', 'w') as f:
         for name in picked_names:
             f.write('echo %s\n' % name)
             f.write('echo %s >> run.log\n' % name)
-            f.write('./cl %s.c.cfg %s.c.dump\n' % (name, name))
-            f.write('./cl %s.c.cfg %s.c.dump >> run.log\n' % (name, name))
+            f.write('./cl %s.cfg %s.dump\n' % (name, name))
+            f.write('./cl %s.cfg %s.dump >> run.log\n' % (name, name))
 
     print('verifying')
-    os.chdir('simpoints')
     nstr = str(len(picked_names))
     for i, name in enumerate(picked_names, 1):
         print('\r%*d/%s' % (len(nstr), i, nstr), end='')
-        cmd = ['spike', 'pk', clpath, name + '.c.cfg', name + '.c.dump']
+        cmd = ['spike', 'pk', clpath, name + '.cfg', name + '.dump']
         p = Popen(cmd, stdout=DEVNULL)
         if p.wait():
-            print('spike returned %d: %s' (p.returncode, name))
+            print('\nspike returned %d: %s' % (p.returncode, name))
     print()
