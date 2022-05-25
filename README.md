@@ -110,7 +110,9 @@ RISC-V Checkpoint with rv8
     ```bash
     $ python3 ../ckpt/parse.py foo.log -j 8
     ```
-* <i><b>【测试中】标准验证：</b>使用标准的spike模拟器验证，及时发现错误
+* <i><b>【测试中】验证切片：</b>使用标准的spike模拟器验证切片是否能正常运行
+    * spike和FPGA的表现基本相同，spike正常运行意味着FPGA应该也能正常运行，反之亦然
+    * 在处理切片时加上`-v`（`--verify`）参数即可
     ```bash
     $ python3 ../ckpt/parse.py foo.log -v
     # checkpoint_0000000000000000000_0000000000005118377 first pass
@@ -136,7 +138,7 @@ RISC-V Checkpoint with rv8
     # cycle 000000000053258c
     # instret 000000000053258b
     ```
-* <b>注：</b>由于切片中的系统调用均已被替换为mock代码，原程序往`stdout`的写也不会生效，故只能看到`cl`的输出，看不到原程序的输出
+* <b>注：</b>由于切片中的系统调用均已被替换为mock代码，故原程序往`stdout`的写不会生效；控制台只能看到`cl`的输出，看不到原程序的输出
 * 为了确认切片运行的正确性，我提供了随机store监控，如果一切正确则不会报错，否则会看到如下信息
     ```bash
     $ rv-sim ckpt/cl xxx.{cfg,dump}
@@ -173,13 +175,42 @@ RISC-V Checkpoint with rv8
     ```
 
 ### SimPoint
-* <b>说明：</b>我并不自己做SimPoint分析，我只是生成SimPoint所需的`.bbv`文件
-* 先自行编译[SimPoint 3.2](https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm)，注意用低版本的gcc或clang，或者自己修改头文件，否则会报找不到定义
-* 在处理系统调用时，用`--exec`参数指定测试程序的路径（此处为`foo`），用于分析基本块
+SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出程序的一部分有代表性的执行片段（切片），然后只对这些片段进行性能评测，最后根据数学模型估算出程序完整执行的性能。在数学模型建立得当、所选执行片段有代表性的情况下，SimPoint可以相当精确地估算出程序的性能。关于SimPoint的更多细节请见论文：[SimPoint 3.0: Faster and More Flexible Program Analysis](https://cseweb.ucsd.edu/~calder/papers/JILP-05-SimPoint3.pdf)。
+
+由于SimPoint的算法已经有开源实现，我的rv8模拟器并不自己做SimPoint分析，只是提供SimPoint工具所需的信息。本小节我将以`foo.c`为例介绍整个制作切片、选择SimPoint和估算IPC的流程。
+
+#### 编译SimPoint
+* 自行下载[SimPoint 3.2](https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm)的代码，解压，进入目录
+    ```bash
+    $ tar xvzf SimPoint.3.2.tar.gz
+    $ cd SimPoint.3.2
+    ```
+* 由于SimPoint的代码已经很古老了，现在的编译器会报错，所以需要做如下修改
+    ```bash
+    $ vim analysiscode/Makefile
+    ```
+    将第1行改为
+    ```Makefile
+    CPPFLAGS = -Wall -pedantic -pedantic-errors -O3 -std=c++98 -include cstdlib -include climits -include cstring -include iostream
+    ```
+    再将第23-24行注释掉
+    ```Makefile
+    #SimpointOptions.o:
+    #    $(CXX)  -Wall -pedantic -pedantic-errors -o SimpointOptions.o -c SimpointOptions.cpp
+    ```
+* 然后就可以正常编译了
+    ```bash
+    $ make
+    ```
+* 编译得到的可执行文件为`bin/simpoint`
+
+#### 生成BBV文件
+* 假设你在`example`目录中，并且已经按 [运行程序并生成切片](#运行程序并生成切片) 得到了`foo`的初步切片
+* 在处理系统调用时，用`--exec`参数指定测试程序的路径（此处为`foo`）；这将允许`parser.py`识别程序的基本块，从而得到每个基本块执行的次数
     ```bash
     $ python3 ../ckpt/parse.py foo.log --exec foo
     ```
-* 加上`--exec`后每段切片都会多出一个`.bb`文件
+* 加上`--exec`后每段切片都会多出一个`.bb`文件，里面就是切片的基本块向量（BBV）
     ```bash
     $ ls *.bb
     # checkpoint_0000000000000000000_0000000000005118377.bb
@@ -187,28 +218,69 @@ RISC-V Checkpoint with rv8
     # checkpoint_0000000000010300887_0000000000015703282.bb
     # ...
     ```
-* 先将这些`.bb`文件合并为一个，由于文件名是按序的，所以合并的内容也是按序的
+* SimPoint要求输入为单个`.bb`文件，所以先将这些`.bb`文件合并为一个；由于文件名是按序的，所以合并的内容也是按序的
     ```bash
     $ cat *.bb > compose.bb
     ```
-* 使用`simpoint`处理
+
+#### 进行SimPoint分析
+* 使用SimPoint分析上一步得到的BBV
+    * 出于测试的目的，这里设置最大聚类数（`-maxK`）为5，但对于大型程序这个值应该设置为30或更高
     ```bash
-    $ simpoint -loadFVFile compose.bb -maxK 30 \
+    $ /path/to/simpoint -loadFVFile compose.bb -maxK 5 \
         -saveSimpoints simpoints.txt \
         -saveSimpointWeights weights.txt
+    # ...
+    # Post-processing run 3 (k = 3)
+    # Saving simpoints of all non-empty clusters to file 'simpoints.txt'
+    # Saving weights of all non-empty clusters to file 'weights.txt'
     ```
-* <i><b>【测试中】</b>若切片数量较多，可以用一个脚本收集`simpoint`选中的切片
+* SimPoint有两个输出文件，其中`simpoints.txt`如下
+    * 第1列是所选切片的序号，*从0开始计*；第2列是SimPoint内部算法的聚类编号，可以不用管
+    * SimPoint输出的时候是按聚类编号排序的，所以导致切片序号没有顺序，需要用户适应
+    ```text
+    7 0
+    4 1
+    1 2
+    ```
+* `weights.txt`如下
+    * 除了第1列变为切片的权重外，其他和`simpoints.txt`相同
+    ```text
+    0.722222 0
+    0.111111 1
+    0.166667 2
+    ```
+* <i><b>【测试中】</b>可以用一个脚本收集这些SimPoint切片，和生成适用于FPGA的运行脚本
     ```bash
-    $ python3 ../ckpt/collect-simpoints.py foo.log
+    $ python3 ../ckpt/collect-simpoints.py foo.log -d foo_simpoints
     # reading log
     # found 18 checkpoints
     # input simpoints (end with an empty line):
     # ...
-    # compressing
-    # copying checkpoints
     # generating run script
     ```
 </i>
+
+#### 计算IPC
+* 你可以按任何顺序运行这些SimPoint切片，只要记住每个切片和权重的对应关系即可
+* 假设每个切片运行得到的`cycle`、`instret`和前面SimPoint输出的权重如下
+
+    |  cycle  | instret  |  weight
+    | --- | --- | ---
+    | 6779925 | 5449097 | 0.722222
+    | 11846459 | 10006447 | 0.111111
+    | 6154603 | 5182791 | 0.166667
+
+* 由SimPoint的原理可知，`weight`是对CPI的线性加权，所以我们先算出CPI
+    ```text
+          6779925              11846459              6154603
+    CPI = ------- * 0.722222 + -------- * 0.111111 + ------- * 0.166667 = 1.228070
+          5449097              10006447              5182791
+    ```
+* 故`IPC = 1/CPI = 0.814`
+
+#### SPEC2006 SimPoint切片库
+* 你可以在[这里]()获取一些预先制作好的SPEC2006程序的SimPoint切片
 
 
 ## 故障排查
