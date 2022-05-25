@@ -5,8 +5,9 @@ from subprocess import Popen, DEVNULL
 
 parser = argparse.ArgumentParser()
 parser.add_argument('path')
-parser.add_argument('-C', '--compress', action='store_true')
-parser.add_argument('-O', '--output-dir', default='simpoints')
+parser.add_argument('-c', '--compress', action='store_true')
+parser.add_argument('-d', '--output-dir', default='simpoints')
+parser.add_argument('-v', '--verify', action='store_true')
 
 srcdir = os.path.dirname(os.path.abspath(__file__))
 comppath = os.path.join(srcdir, 'compress.py')
@@ -77,12 +78,13 @@ if __name__ == '__main__':
             f.write('./cl %s.cfg %s.dump\n' % (name, name))
             f.write('./cl %s.cfg %s.dump >> run.log\n' % (name, name))
 
-    print('verifying')
-    nstr = str(len(picked_names))
-    for i, name in enumerate(picked_names, 1):
-        print('\r%*d/%s' % (len(nstr), i, nstr), end='')
-        cmd = ['spike', 'pk', clpath, name + '.cfg', name + '.dump']
-        p = Popen(cmd, stdout=DEVNULL)
-        if p.wait():
-            print('\nspike returned %d: %s' % (p.returncode, name))
-    print()
+    if args.verify:
+        print('verifying')
+        nstr = str(len(picked_names))
+        for i, name in enumerate(picked_names, 1):
+            print('\r%*d/%s' % (len(nstr), i, nstr), end='')
+            cmd = ['spike', 'pk', clpath, name + '.cfg', name + '.dump']
+            p = Popen(cmd, stdout=DEVNULL)
+            if p.wait():
+                print('\nspike returned %d: %s' % (p.returncode, name))
+        print()
