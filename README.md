@@ -208,7 +208,7 @@ RISC-V Checkpoint with rv8
 ## SimPoint
 SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出程序的一部分有代表性的执行片段（切片），然后只对这些片段进行性能评测，最后根据数学模型估算出程序完整执行的性能。在数学模型建立得当、所选执行片段有代表性的情况下，SimPoint可以相当精确地估算出程序的性能。关于SimPoint的更多细节请见论文：[SimPoint 3.0: Faster and More Flexible Program Analysis](https://cseweb.ucsd.edu/~calder/papers/JILP-05-SimPoint3.pdf)。
 
-由于SimPoint的算法已经有开源实现，我的rv8模拟器并不自己做SimPoint分析，只是提供SimPoint工具所需的信息。本小节我将以`foo.c`为例介绍整个制作切片、选择SimPoint和估算IPC的流程。
+由于SimPoint的算法已经有开源实现，我的rv8模拟器并不自己做SimPoint分析，只是提供SimPoint工具所需的信息。本节我将以`foo.c`为例介绍一整套SimPoint的流程，包括生成BBV、进行SimPoint分析和估算IPC。
 
 ### 编译SimPoint
 * 自行下载[SimPoint 3.2](https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm)的代码，解压，进入目录
@@ -281,7 +281,7 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     0.111111 1
     0.166667 2
     ```
-* <i><b>【测试中】</b>可以用一个脚本收集这些SimPoint切片，和生成适用于FPGA的运行脚本
+* <i><b>【测试中】</b>可以用一个脚本收集这些SimPoint切片，同时生成适用于FPGA的运行脚本
     ```bash
     $ python3 ../ckpt/collect-simpoints.py foo.log -d foo_simpoints
     # reading log
@@ -303,12 +303,8 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     | 6154603 | 5182791 | 0.166667
 
 * 由SimPoint的原理可知，`weight`是对CPI的线性加权，所以我们先算出CPI
-    ```text
-          6779925              11846459              6154603
-    CPI = ------- * 0.722222 + -------- * 0.111111 + ------- * 0.166667 = 1.228070
-          5449097              10006447              5182791
-    ```
-* 故`IPC = 1/CPI = 0.814`
+    $$CPI=\frac{6779925}{5449097}\times0.722222+\frac{11846459}{10006447}\times0.111111+\frac{6154603}{5182791}\times0.166667=1.228070$$
+* 故$IPC=1/CPI=0.814$
 
 ### SPEC2006 SimPoint切片库
 * 你可以在[这里]()获取一些预先制作好的SPEC2006 benchmark的SimPoint切片
