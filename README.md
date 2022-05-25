@@ -174,12 +174,43 @@ RISC-V Checkpoint with rv8
     # checkpoint_0000000000062808575_0000000000068256844.2.c.dump
     ```
 
-### SimPoint
+### 使用verilator模拟器运行切片
+* 在模拟器中使用并非我的设计初衷，因为在模拟器里完全有更好的做切片的方式，本小节介绍的只是一个临时方案
+* 首先假设你已经通过Chipyard构建出了一个verilator模拟器，例如`simulator-MediumBoomConfig`
+* 在verilator上我们需要riscv-pk来提供Linux用户环境，用下面的方法获取和编译pk：
+    ```bash
+    $ git clone https://github.com/riscv-software-src/riscv-pk.git
+    $ cd riscv-pk
+    $ mkdir build
+    $ cd build
+    $ ../configure --host=riscv64-unknown-elf
+    $ make -j`nproc`
+    ```
+* 编译得到的`pk`可执行程序就位于当前目录（`riscv-pk/build`）下，你可以把它移动到一个顺手的地方
+* 运行切片，当前5M大小的切片可能需要10-20分钟
+    ```bash
+    $ cd example
+    $ /path/to/simulator-MediumBoomConfig /path/to/pk ../ckpt/cl \
+        checkpoint_0000000000005118403_0000000000010300911.2.{cfg,dump}
+    # This emulator compiled with JTAG Remote Bitbang client. To enable, use +jtag_rbb_enable=1.
+    # Listening on port 34625
+    # [UART] UART0 is here (stdin/stdout).
+    # bbl loader
+    # map cl to 0x60000000-0x60001fff
+    # map mc to 0x60002000-0x60003fff
+    # invoke cl
+    # begin execution
+    # finish
+    # cycle 0000000000674497
+    # instret 00000000004f181b
+    ```
+
+## SimPoint
 SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出程序的一部分有代表性的执行片段（切片），然后只对这些片段进行性能评测，最后根据数学模型估算出程序完整执行的性能。在数学模型建立得当、所选执行片段有代表性的情况下，SimPoint可以相当精确地估算出程序的性能。关于SimPoint的更多细节请见论文：[SimPoint 3.0: Faster and More Flexible Program Analysis](https://cseweb.ucsd.edu/~calder/papers/JILP-05-SimPoint3.pdf)。
 
 由于SimPoint的算法已经有开源实现，我的rv8模拟器并不自己做SimPoint分析，只是提供SimPoint工具所需的信息。本小节我将以`foo.c`为例介绍整个制作切片、选择SimPoint和估算IPC的流程。
 
-#### 编译SimPoint
+### 编译SimPoint
 * 自行下载[SimPoint 3.2](https://cseweb.ucsd.edu/~calder/simpoint/simpoint-3-0.htm)的代码，解压，进入目录
     ```bash
     $ tar xvzf SimPoint.3.2.tar.gz
@@ -204,8 +235,8 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     ```
 * 编译得到的可执行文件为`bin/simpoint`
 
-#### 生成BBV文件
-* 假设你在`example`目录中，并且已经按 [运行程序并生成切片](#运行程序并生成切片) 得到了`foo`的初步切片
+### 生成BBV文件
+* 假设你在`example`目录中，并且已经按[运行程序并生成切片](#运行程序并生成切片)得到了`foo`的初步切片
 * 在处理系统调用时，用`--exec`参数指定测试程序的路径（此处为`foo`）；这将允许`parser.py`识别程序的基本块，从而得到每个基本块执行的次数
     ```bash
     $ python3 ../ckpt/parse.py foo.log --exec foo
@@ -223,7 +254,7 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     $ cat *.bb > compose.bb
     ```
 
-#### 进行SimPoint分析
+### 进行SimPoint分析
 * 使用SimPoint分析上一步得到的BBV
     * 出于测试的目的，这里设置最大聚类数（`-maxK`）为5，但对于大型程序这个值应该设置为30或更高
     ```bash
@@ -261,7 +292,7 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     ```
 </i>
 
-#### 计算IPC
+### 计算IPC
 * 你可以按任何顺序运行这些SimPoint切片，只要记住每个切片和权重的对应关系即可
 * 假设每个切片运行得到的`cycle`、`instret`和前面SimPoint输出的权重如下
 
@@ -279,8 +310,11 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     ```
 * 故`IPC = 1/CPI = 0.814`
 
-#### SPEC2006 SimPoint切片库
-* 你可以在[这里]()获取一些预先制作好的SPEC2006程序的SimPoint切片
+### SPEC2006 SimPoint切片库
+* 你可以在[这里]()获取一些预先制作好的SPEC2006 benchmark的SimPoint切片
+* 为了方便在不同平台上做实验的用户，一些benchmark的切片大小有10M和100M可选
+    * 在FPGA上建议用100M的，这样性能数据更加准确
+    * 在模拟器上可以用10M的，否则运行时间可能会比较长（10M：10-30min，100M：2h-4h）
 
 
 ## 故障排查
