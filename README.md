@@ -303,8 +303,9 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     | 6154603 | 5182791 | 0.166667
 
 * 由SimPoint的原理可知，`weight`是对CPI的线性加权，所以我们先算出CPI
-    $$CPI=\frac{6779925}{5449097}\times0.722222+\frac{11846459}{10006447}\times0.111111+\frac{6154603}{5182791}\times0.166667=1.228070$$
-* 故$IPC=1/CPI=0.814$
+    <img src="https://latex.codecogs.com/gif.latex?%5Cdpi%7B300%7D%20%5Cfn_cm%20%5Ctiny%20CPI%3D%5Cfrac%7B6779925%7D%7B5449097%7D%5Ctimes0.722222&plus;%5Cfrac%7B11846459%7D%7B10006447%7D%5Ctimes0.111111&plus;%5Cfrac%7B6154603%7D%7B5182791%7D%5Ctimes0.166667%3D1.228070" height="37"/>
+
+* 故 <img src="https://latex.codecogs.com/gif.latex?%5Cdpi%7B300%7D%20%5Cfn_cm%20%5Ctiny%20IPC%3D1/CPI%3D0.814" height="16"/>
 
 ### SPEC2006 SimPoint切片库
 * 你可以在[Latest Release](https://github.com/lshpku/rv8-riscv-ckpt/releases/tag/v220526)获取一些预先制作好的SPEC2006 benchmark的SimPoint切片
