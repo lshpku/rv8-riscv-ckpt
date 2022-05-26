@@ -307,11 +307,14 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
 * 故$IPC=1/CPI=0.814$
 
 ### SPEC2006 SimPoint切片库
-* 你可以在[这里]()获取一些预先制作好的SPEC2006 benchmark的SimPoint切片
-* 为了方便在不同平台上做实验的用户，一些benchmark的切片大小有10M和100M可选
+* 你可以在[Latest Release](https://github.com/lshpku/rv8-riscv-ckpt/releases/tag/v220526)获取一些预先制作好的SPEC2006 benchmark的SimPoint切片
+* 文件的命名为`{benchmark}_{输入}-{切片大小}-{SimPoint切片数量}.tar.xz`
+    * 例如`gcc_166-100M-25P.tar.xz`的意思是`403.gcc`程序的`166.i`输入，切片大小为100M条指令，共有25个SimPoint切片
+* 为了方便在不同平台上做实验，一些benchmark的切片大小有10M和100M可选
     * 在FPGA上建议用100M的，这样性能数据更加准确
-    * 在模拟器上可以用10M的，否则运行时间可能会比较长（10M：10-30min，100M：2h-4h）
-
+    * 在模拟器上可以用10M的，否则运行时间可能会比较长（10M：40min，100M：6h）
+* 每个压缩包内还有一个用于FPGA的`run.sh`脚本，脚本的运行顺序和`weights.txt`的顺序是一致的
+    * 如果你不是在FPGA上运行，可以自己修改一下脚本，只要保持切片的顺序即可
 
 ## 故障排查
 #### 运行`ckpt/parse.py`时报`expected cl`异常
