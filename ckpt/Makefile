@@ -21,8 +21,8 @@ endif
 ifdef NORVC
 $(eval CDEFS += -DNORVC=1)
 endif
-ifdef VERBOSE
-$(eval CDEFS += -DVERBOSE=1)
+ifndef NUM_CSR
+NUM_CSR = 2
 endif
 
 near%.o: near.S
@@ -31,11 +31,9 @@ near%.partial: near%.o
 	$(LD) -e 0 -o $@ $^
 
 far%.o: far.S
-	$(CC) -DFAR_STACK_TOP=$(FAR_STACK_TOP) -c -o $@ $<
-replay%.o: replay.c
-	$(CC) $(CFLAGS) -fPIC $(CDEFS) -c -o $@ $<
-far%.partial: far%.o replay%.o
-	$(LD) -e 0 -o $@ $^
+	$(CC) -DREPLAY_SP=$(REPLAY_SP) -DREPLAY_PC=$(REPLAY_PC) -c -o $@ $<
+far%.partial: far%.o
+	$(LD) -e 0 -o $@ $<
 
 jump%.o: jump.S
 	$(CC) $(CDEFS) -DOFFSET=$(OFFSET) -c -o $@ $<
@@ -46,9 +44,13 @@ FASTLZ_FLAGS = -fno-tree-loop-distribute-patterns -DFASTLZ_USE_MEMMOVE=0
 
 cl.o: cl.c
 	$(CC) $(CFLAGS) -fPIC -c -o $@ $<
+entry.o: entry.S
+	$(CC) -DNUM_CSR=$(NUM_CSR) -c -o $@ $<
+replay.o: replay.c
+	$(CC) $(CFLAGS) -fPIC $(CDEFS) -c -o $@ $<
 fastlz.o: FastLZ/fastlz.c FastLZ/fastlz.h
 	$(CC) $(CFLAGS) -fPIC $(FASTLZ_FLAGS) -c -o $@ $<
-cl.partial: entry.o cl.o fastlz.o
+cl.partial: entry.o cl.o replay.o fastlz.o
 	$(LD) -e 0 -o $@ $^
 cl: main.c cl-wrapper.S cl.bin
 	$(CC) $(CFLAGS) -static -o $@ $(filter %.c %.S, $^)

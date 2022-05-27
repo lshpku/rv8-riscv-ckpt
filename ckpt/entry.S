@@ -14,13 +14,21 @@
 	.global	cl_entry
 cl_entry:
 	# map pages
-	addi	sp, sp, -16
-	sd	a2, 0(sp)
-	sd	a3, 8(sp)
-	call	map_pages
-	ld	sp, 8(sp)
+	addi	sp, sp, -(8+NUM_CSR*8)
+	sd	a3, 0(sp)
+	jal	map_pages
+
+	# set replay stack
+	ld	a0, 0(sp)	# regfile
+	addi	a1, a0, 512	# replay_sp
+	sd	sp, 0(a1)
+	lla	a2, replay	# replay_pc
+	sd	a2, 8(a1)
+	addi	a1, a1, 16	# replay_table
+	sd	a1, 0(sp)
 
 	# restore register file
+	mv	sp, a0
 	# 30 int regs except x0 and x2 (sp)
 	ld	x1, 8(sp)
 	ld	x3, 24(sp)

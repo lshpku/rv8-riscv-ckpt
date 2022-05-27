@@ -75,10 +75,8 @@ class MakeHelper:
         return near + ret
 
     @staticmethod
-    def far(far_stack_top: int, verbose: bool = False):
-        args = ['FAR_STACK_TOP=0x%x' % far_stack_top]
-        if verbose:
-            args += ['VERBOSE=1']
+    def far(replay_sp: int, replay_pc: int):
+        args = ['REPLAY_SP=0x%x' % replay_sp, 'REPLAY_PC=0x%x' % replay_pc]
         return MakeHelper.make('far.bin', args)
 
 
@@ -305,6 +303,10 @@ class PageMap:
 
 
 class SysCall:
+    RET = 0
+    EXIT = 1
+    ENTRY = 2
+    RET_VERBOSE = 3
 
     def __init__(self, addr: int, retval: int = None,
                  alter_rd: int = None, is_break: bool = False,
@@ -323,7 +325,7 @@ class SysCall:
             wbuf.append(int(wdata[i:i + 2], 16))
         self.wdata = bytes(wbuf)
 
-    def make_entry(self) -> bytes:
+    def make_entry(self, verbose: bool) -> bytes:
         buf = []
 
         if self.waddr is not None:
@@ -334,12 +336,13 @@ class SysCall:
             buf.append(self.wdata)
             buf.append(b'\0' * padding_size)
 
-        if not self.is_break:
+        if self.is_break:
+            buf.append(self.EXIT.to_bytes(8, 'little'))
             buf.append((0).to_bytes(8, 'little'))
-            buf.append(self.retval.to_bytes(8, 'little'))
         else:
-            buf.append((1).to_bytes(8, 'little'))
-            buf.append((0).to_bytes(8, 'little'))
+            ret = self.RET_VERBOSE if verbose else self.RET
+            buf.append(ret.to_bytes(8, 'little'))
+            buf.append(self.retval.to_bytes(8, 'little'))
 
         return b''.join(buf)
 
@@ -358,7 +361,7 @@ class Checkpoint:
         self.clpath = None
 
     def process_once(self, verbose=False, suffix='.1'):
-        # reserve space for near_calls
+        # reserve space for near/entry/far calls
         for syscall in self.syscalls:
             # set all 4 bytes in case the latter 2 bytes of
             # an rvc instruction are considered free
@@ -376,39 +379,29 @@ class Checkpoint:
         size = len(MakeHelper.near(0, 0, 0))
         entry_addr = self.pages.reserve(free_list, self.entry_pc, size)
 
-        # reserve pages for supervisor
+        size = len(MakeHelper.far(0, 0))
+        far_addr = self.pages.reserve(free_list, self.entry_pc, size)
+
+        # reserve pages for replay stack
         '''
-        Supervisor (SV) structure:
-                +--------------+
-                |              | replay_table_head
-            rw  |  far_stack   |  4K
-                |              | near_buf
-                +--------------+
-                |   regfile    |
-                | ------------ |
-            ro  |              |  4K * N
-                | replay_table |
-                |              |
-                +--------------+
-            rx  |   far_call   |  4K
-                +--------------+
+        struct replay_stack {
+            uint64_t regfile[64];
+            uint64_t replay_sp;
+            uint64_t replay_pc;
+            uint64_t replay_table[N];
+            uint64_t near_buf; };
         '''
-        replay_table = self.make_replay_table()
-        rw_size = PAGE_SIZE
-        ro_size = len(replay_table) + 8 * len(self.regs)
-        ro_size = (ro_size + PAGE_OFFS_MASK) & ~PAGE_OFFS_MASK
-        rx_size = PAGE_SIZE
-        sv_size = rx_size + ro_size + rw_size
+        replay_table = self.make_replay_table(verbose)
+        replay_stack_size = 64 * 8 + 8 + 8 + len(replay_table) + 8
+        replay_stack_pn = self.pages.reserve_page(replay_stack_size)
 
-        sv_pn = self.pages.reserve_page(sv_size)
+        regs_addr = replay_stack_pn * PAGE_SIZE
+        replay_sp_addr = regs_addr + 64 * 8
+        replay_pc_addr = replay_sp_addr + 8
+        replay_table_addr = replay_pc_addr + 8
+        near_buf = replay_table_addr + len(replay_table)
 
-        far_addr = sv_pn * PAGE_SIZE
-        replay_table_addr = far_addr + rx_size
-        regs_addr = replay_table_addr + len(replay_table)
-        near_buf = replay_table_addr + ro_size
-        far_stack_top = near_buf + rw_size
-
-        # write near_calls
+        # write near/entry/far calls
         for syscall in self.syscalls:
             if syscall.addr not in near_map:
                 continue
@@ -423,17 +416,16 @@ class Checkpoint:
         entry_call = MakeHelper.near(self.entry_pc, entry_addr, near_buf)
         self.pages.put(entry_addr, entry_call)
 
-        # write supervisor
-        far_call = MakeHelper.far(far_stack_top, verbose)
+        far_call = MakeHelper.far(replay_sp_addr, replay_pc_addr)
         self.pages.put(far_addr, far_call)
-        self.pages.put(replay_table_addr, replay_table)
+
+        # write replay stack
         regs = self.regs.copy()
         regs[0] = far_addr.to_bytes(8, 'little')
         regs[10] = entry_addr.to_bytes(8, 'little')
         self.pages.put(regs_addr, b''.join(regs))
+        self.pages.put(replay_table_addr, replay_table)
         self.pages.put(near_buf, self.regs[2])
-        self.pages.put(far_stack_top - 8,
-                       replay_table_addr.to_bytes(8, 'little'))
 
         # dump pages and cfg
         dumpfile = open(self.path_prefix + suffix + '.dump', 'wb')
@@ -531,17 +523,17 @@ class Checkpoint:
                 return
         print(self.path_prefix, 'done')
 
-    def make_replay_table(self):
+    def make_replay_table(self, verbose: bool):
         buf = []
 
         # entrypoint
-        buf.append((2).to_bytes(8, 'little'))
+        buf.append((SysCall.ENTRY).to_bytes(8, 'little'))
         buf.append(self.regs[10])  # a0
 
         # syscalls
         # breakpoint is automatically encoded
         for syscall in self.syscalls:
-            buf.append(syscall.make_entry())
+            buf.append(syscall.make_entry(verbose))
 
         # store assertions
         for addr, size, data in sorted(self.stores):

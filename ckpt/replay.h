@@ -5,6 +5,7 @@
 #define REPLAY_RET 0
 #define REPLAY_EXIT 1
 #define REPLAY_ENTRY 2
+#define REPLAY_RET_VERBOSE 3
 
 typedef struct {
     uint64_t addr;
