@@ -25,4 +25,8 @@ typedef struct {
 DEFINE_CSRR(cycle)
 DEFINE_CSRR(instret)
 
+#ifndef NUM_CSR
+#define NUM_CSR 2
+#endif
+
 #endif

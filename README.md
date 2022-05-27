@@ -150,8 +150,32 @@ RISC-V Checkpoint with rv8
 ## 进阶使用
 
 ### 添加CSR性能计数器
-* 性能计数器在`replay.h`和`replay.c`中定义
-* `replay()`在执行开始时保存当前数值，在结束时再读一次，将两次的差值打印出来
+* 我已经提供了读`cycle`和`instret`的功能，想要读更多CSR也是很容易的事情，下面以`hpmcounter3`为例说明添加新的CSR的方法
+* 首先在`replay.h`中添加`csrr`指令的定义，用`DEFINE_CSRR`这个宏定义一条`csrr`伪汇编指令
+    ```c
+    DEFINE_CSRR(hpmcounter3)
+    ```
+* 在`replay.c`中添加读CSR和打印前后差值的代码
+    * 在`REPLAY_ENTRY`时读第一次CSR
+    ```c
+    csrv[2] = __csrr_hpmcounter3();
+    ```
+    * 在`REPLAY_EXIT`开始时立即读第二次CSR，避免计入store检查的影响
+    ```c
+    uint64_t hpmcounter3 = __csrr_hpmcounter3();
+    ```
+    * 在完成store检查后再将前后两次的差值打印出来，
+    ```c
+    RAW_PRINT("hpmcounter3 ");
+    raw_log_u64(hpmcounter3 - csrv[2]);
+    ```
+
+* 修改完成后，需要重新编译CL，**!!!警告!!!** 若使用了超过2个CSR，必须指定`NUM_CSR`为使用CSR的个数，否则会栈溢出！
+    ```bash
+    $ cd ckpt
+    $ make clean
+    $ make cl NUM_CSR=3
+    ```
 
 ### 压缩切片
 * 由于进程空间的内容常常是稀疏的，所以用简单的LZ77算法就可以很好地压缩内存镜像

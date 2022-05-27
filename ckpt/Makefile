@@ -23,6 +23,8 @@ $(eval CDEFS += -DNORVC=1)
 endif
 ifndef NUM_CSR
 NUM_CSR = 2
+else
+$(eval CDEFS += -DNUM_CSR=$(NUM_CSR))
 endif
 
 near%.o: near.S

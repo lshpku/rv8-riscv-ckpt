@@ -45,7 +45,7 @@ static void raw_log_u64(uint64_t value)
     raw_write(1, buf, sizeof(buf));
 }
 
-replay_cfg *replay(replay_cfg *head, uint64_t *csrv)
+replay_cfg *replay(replay_cfg *head, uint64_t csrv[NUM_CSR])
 {
     while (1) {
         switch (head->addr) {
