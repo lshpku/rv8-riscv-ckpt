@@ -61,7 +61,7 @@ RISC-V Checkpoint with rv8
     ```
 * 运行测试程序的同时生成切片
     ```bash
-    $ rv-sim -C foo.log -V 5000000 -- foo
+    $ rv-sim -C foo.cpt -V 5000000 -- foo
     # Task 1: Memory allocation
     # success
     # Task 2: List sorting
@@ -70,15 +70,14 @@ RISC-V Checkpoint with rv8
     # success
     # Running time: 2.440910780s
     ```
-* 查看生成的切片，包括每个切片的内存镜像（`.dump`）文件和一个总的`.log`文件
-    * <b>注：</b>由于运行的不确定性，切片的名称可能有所不同
+* 查看生成的切片，包括一个总的切片概述文件（`.cpt`）和每个切片的内存镜像文件（`.dump`）；由于运行的不确定性，切片的名称可能有所不同；<b>注意：</b>`.cpt`和`.dump`文件是绑定的，请将它们保持在同一个文件夹中
     ```bash
     $ ls
     # checkpoint_0000000000000000000_0000000000005118377.dump
     # checkpoint_0000000000005118378_0000000000010300886.dump
     # checkpoint_0000000000010300887_0000000000015703282.dump
     # ...
-    # foo.log
+    # foo.cpt
     ```
 
 ### 处理系统调用
@@ -87,7 +86,7 @@ RISC-V Checkpoint with rv8
     * 而且系统调用处理需要多次调用RISC-V工具链，Python更适合这个任务
 * 使用Python脚本处理上述切片
     ```bash
-    $ python3 ../ckpt/parse.py foo.log
+    $ python3 ../ckpt/parse.py foo.cpt
     # checkpoint_0000000000000000000_0000000000005118377 first pass
     # checkpoint_0000000000000000000_0000000000005118377 rerunning
     # checkpoint_0000000000000000000_0000000000005118377 second pass
@@ -105,16 +104,16 @@ RISC-V Checkpoint with rv8
     # checkpoint_0000000000000000000_0000000000005118377.2.dump
     # ...
     ```
-* <b>【新增】多进程支持：</b>由于解析完log后的工作是独立的，可以用多进程加快这部分的速度
-    * 例如，以下命令使用8进程进行处理
+* <b>【新增】多进程支持：</b>处理系统调用时切片之间是相互独立的，可以用多进程加速
+    * 例如以下命令使用8进程进行处理
     ```bash
-    $ python3 ../ckpt/parse.py foo.log -j 8
+    $ python3 ../ckpt/parse.py foo.cpt -j 8
     ```
 * <i><b>【测试中】验证切片：</b>使用标准的spike模拟器验证切片是否能正常运行
     * spike和FPGA的表现基本相同，spike正常运行意味着FPGA应该也能正常运行，反之亦然
     * 在处理切片时加上`-v`（`--verify`）参数即可
     ```bash
-    $ python3 ../ckpt/parse.py foo.log -v
+    $ python3 ../ckpt/parse.py foo.cpt -v
     # checkpoint_0000000000000000000_0000000000005118377 first pass
     # checkpoint_0000000000000000000_0000000000005118377 rerunning
     # checkpoint_0000000000000000000_0000000000005118377 second pass
@@ -263,7 +262,7 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
 * 假设你在`example`目录中，并且已经按[运行程序并生成切片](#运行程序并生成切片)得到了`foo`的初步切片
 * 在处理系统调用时，用`--exec`参数指定测试程序的路径（此处为`foo`）；这将允许`parser.py`识别程序的基本块，从而得到每个基本块执行的次数
     ```bash
-    $ python3 ../ckpt/parse.py foo.log --exec foo
+    $ python3 ../ckpt/parse.py foo.cpt --exec foo
     ```
 * 加上`--exec`后每段切片都会多出一个`.bb`文件，里面就是切片的基本块向量（BBV）
     ```bash
@@ -307,7 +306,7 @@ SimPoint是一个可以大幅节省性能评测成本的技术。它首先选出
     ```
 * <i><b>【测试中】</b>可以用一个脚本收集这些SimPoint切片，同时生成适用于FPGA的运行脚本
     ```bash
-    $ python3 ../ckpt/collect-simpoints.py foo.log -d foo_simpoints
+    $ python3 ../ckpt/collect-simpoints.py foo.cpt -d foo_simpoints
     # reading log
     # found 18 checkpoints
     # input simpoints (end with an empty line):
