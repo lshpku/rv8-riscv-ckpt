@@ -13,6 +13,7 @@ namespace riscv {
 		abi_syscall_fcntl = 25,
 		abi_syscall_ioctl = 29,
 		abi_syscall_unlinkat = 35,
+		ab1_syscall_ftruncate = 46,
 		abi_syscall_faccessat = 48,
 		abi_syscall_openat = 56,
 		abi_syscall_close = 57,
@@ -526,6 +527,18 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], pathname, (long)proc.ireg[rv_ireg_a2],
 				cvt_error(ret));
 		}
+		proc.ireg[rv_ireg_a0] = cvt_error(ret);
+	}
+
+	template <typename P> void abi_sys_ftruncate(P &proc)
+	{
+		int ret = ftruncate(proc.ireg[rv_ireg_a0], proc.ireg[rv_ireg_a1]);
+		if (proc.log & proc_log_syscall) {
+			printf("ftruncate(%ld,%ld) = %d\n",
+				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
+				cvt_error(ret));
+		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -1263,6 +1276,7 @@ namespace riscv {
 			case abi_syscall_fcntl:           abi_sys_fcntl(proc); break;
 			case abi_syscall_ioctl:           abi_sys_ioctl(proc); break;
 			case abi_syscall_unlinkat:        abi_sys_unlinkat(proc); break;
+			case ab1_syscall_ftruncate:       abi_sys_ftruncate(proc); break;
 			case abi_syscall_faccessat:       abi_sys_faccessat(proc); break;
 			case abi_syscall_openat:          abi_sys_openat(proc); break;
 			case abi_syscall_close:           abi_sys_close(proc); break;
