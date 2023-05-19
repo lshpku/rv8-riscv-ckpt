@@ -429,12 +429,19 @@ namespace riscv {
 	{
 		char *buf = (char*)(addr_t)proc.ireg[rv_ireg_a0].r.xu.val;
 		char *ret = getcwd(buf, proc.ireg[rv_ireg_a1]);
-		if (proc.log & proc_log_syscall) {
-			printf("getcwd(%ld,0x%lx) = %d",
-				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
-				ret ? 0 : -EINVAL);
+		int retval;
+		if (ret) {
+			retval = strlen(ret) + 1; // including '\0'
+		} else {
+			retval = cvt_error(-1);
 		}
-		proc.ireg[rv_ireg_a0] = ret ? 0 : -EINVAL;
+		if (proc.log & proc_log_syscall) {
+			printf("getcwd(%ld,0x%lx) = %d\n",
+				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
+				retval);
+		}
+		proc.ireg[rv_ireg_a0] = retval;
+		checkpoint.syscall(retval, buf, proc.ireg[rv_ireg_a1]);
 	}
 
 	template <typename P> void abi_sys_fcntl(P &proc)
@@ -459,20 +466,22 @@ namespace riscv {
 		}
 		if (cmd == -1) {
 			if (proc.log & proc_log_syscall) {
-				printf("fcntl(%ld,%ld,0x%lx) = %d",
+				printf("fcntl(%ld,%ld,0x%lx) = %d\n",
 					(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 					(long)proc.ireg[rv_ireg_a2], -EINVAL);
 			}
 			proc.ireg[rv_ireg_a0] = -EINVAL;
+			checkpoint.syscall(-EINVAL);
 			return;
 		}
 		int ret = fcntl(proc.ireg[rv_ireg_a0], cmd, proc.ireg[rv_ireg_a2]);
 		if (proc.log & proc_log_syscall) {
-			printf("fcntl(%ld,%ld,0x%lx) = %d",
+			printf("fcntl(%ld,%ld,0x%lx) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
+		checkpoint.syscall(cvt_error(ret));
 	}
 
 	template <typename P> void abi_sys_ioctl(P &proc)
