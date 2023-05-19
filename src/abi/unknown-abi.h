@@ -818,6 +818,7 @@ namespace riscv {
 				pathname, (long)proc.ireg[rv_ireg_a1], (long)proc.ireg[rv_ireg_a2],
 				cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -829,6 +830,7 @@ namespace riscv {
 			printf("unlink(%s) = %d\n",
 				pathname, cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -845,6 +847,7 @@ namespace riscv {
 				pathname, (long)proc.ireg[rv_ireg_a1],
 				cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret), guest_stat, sizeof(*guest_stat));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -857,6 +860,7 @@ namespace riscv {
 				pathname, (long)proc.ireg[rv_ireg_a1],
 				(long)proc.ireg[rv_ireg_a2], cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
