@@ -512,6 +512,7 @@ namespace riscv {
 				proc.ireg[rv_ireg_a0] = -abi_errno_EINVAL;
 				break;
 		}
+		checkpoint.syscall(proc.ireg[rv_ireg_a0]);
 	}
 
 	template <typename P> void abi_sys_unlinkat(P &proc)
@@ -536,6 +537,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], pathname, (long)proc.ireg[rv_ireg_a2],
 				cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
@@ -573,6 +575,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a0], pathname, (long)proc.ireg[rv_ireg_a2],
 				(long)proc.ireg[rv_ireg_a3], cvt_error(ret));
 		}
+		checkpoint.syscall(cvt_error(ret));
 		proc.ireg[rv_ireg_a0] = cvt_error(ret);
 	}
 
