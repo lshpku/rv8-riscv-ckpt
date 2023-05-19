@@ -926,6 +926,7 @@ namespace riscv {
 				(long)proc.ireg[rv_ireg_a2], (long)proc.ireg[rv_ireg_a3],
 				0);
 		}
+		checkpoint.syscall(0);
 		proc.ireg[rv_ireg_a0] = 0; /* nop */
 	}
 
@@ -981,6 +982,9 @@ namespace riscv {
 		abi_rusage<P> *guest_rusage = (abi_rusage<P>*)(addr_t)proc.ireg[rv_ireg_a1].r.xu.val;
 		if (guest_rusage) {
 			cvt_abi_rusage(guest_rusage, &host_rusage);
+			checkpoint.syscall(cvt_error(ret), guest_rusage, sizeof(*guest_rusage));
+		} else {
+			checkpoint.syscall(cvt_error(ret));
 		}
 		if (proc.log & proc_log_syscall) {
 			printf("getrusage(%ld, 0x%lx) = %d\n",
@@ -1032,6 +1036,7 @@ namespace riscv {
 			printf("sysinfo(0x%lx) = %d\n",
 				(long)proc.ireg[rv_ireg_a0], 0);
 		}
+		checkpoint.syscall(0, guest_sysinfo, sizeof(*guest_sysinfo));
 		proc.ireg[rv_ireg_a0] = 0;
 	}
 
